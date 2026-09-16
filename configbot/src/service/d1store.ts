@@ -352,7 +352,7 @@ export class D1Store implements Store {
       `INSERT INTO audit_log (id, actor_id, actor_label, action, target_type, target_id, detail, created_at)
        VALUES (?1,?2,?3,?4,?5,?6,?7,?8)`,
     )
-      .bind(newId('aud'), entry.actorId, entry.actorId ? 'admin' : 'system', entry.action, entry.targetType, entry.targetId, entry.detail, now())
+      .bind(newId('aud'), entry.actorId, entry.actorLabel ?? (entry.actorId ? 'admin' : 'system'), entry.action, entry.targetType, entry.targetId, entry.detail, now())
       .run();
   }
 

@@ -130,7 +130,11 @@ export interface TicketRecord {
 
 export interface AuditEntry {
   id: string;
+  /** A real users.id, or null. audit_log.actor_id is a foreign key, so a
+   *  label like 'ai' or 'admin' must never be written here. */
   actorId: string | null;
+  /** Human-readable actor when there is no user row: 'ai', 'admin', 'system'. */
+  actorLabel?: string;
   action: string;
   targetType: string;
   targetId: string;

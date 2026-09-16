@@ -22,10 +22,46 @@ function makeFakeDb() {
     return tables.get(t)!;
   };
 
+  /**
+   * The foreign keys this fake enforces.
+   *
+   * Deliberately narrow but real: without this, a label like 'ai' written into
+   * a `REFERENCES users(id)` column sails straight through every test and only
+   * explodes against real SQLite — which is exactly how the payments.reviewed_by
+   * bug shipped. The list covers the columns the payment lifecycle writes.
+   */
+  const FK: Record<string, Record<string, [string, string]>> = {
+    payments: { user_id: ['users', 'id'], order_id: ['orders', 'id'], reviewed_by: ['users', 'id'] },
+    orders: { user_id: ['users', 'id'], plan_id: ['plans', 'id'] },
+    subscriptions: { user_id: ['users', 'id'] },
+    credentials: { user_id: ['users', 'id'], sub_id: ['subscriptions', 'id'], node_id: ['nodes', 'id'] },
+    audit_log: { actor_id: ['users', 'id'] },
+  };
+
+  function assertFk(table: string, row: Row): void {
+    for (const [col, [refTable, refCol]] of Object.entries(FK[table] ?? {})) {
+      const v = row[col];
+      if (v === null || v === undefined || v === '') continue;
+      const hit = ensure(refTable).some((r) => String(r[refCol]) === String(v));
+      if (!hit) {
+        throw new Error(
+          `FOREIGN KEY constraint failed: ${table}.${col} = ${JSON.stringify(v)} ` +
+            `is not in ${refTable}.${refCol}`,
+        );
+      }
+    }
+  }
+
   function matches(row: Row, params: unknown[], sql: string): boolean {
     const where = /WHERE([\s\S]*?)(?:ORDER BY|LIMIT|$)/i.exec(sql)?.[1] ?? '';
-    // Bound params: col = ?N
-    for (const [, col, idx] of where.matchAll(/(\w+)\s*=\s*\?(\d+)/g)) {
+    // Inequalities first: col != ?N. Skipping these made
+    // countPaymentsByTracking count the payment it had just inserted against
+    // itself, so every receipt looked like a duplicate.
+    for (const [, col, idx] of where.matchAll(/(\w+)\s*!=\s*\?(\d+)/g)) {
+      if (String(row[col!] ?? '') === String(params[Number(idx) - 1] ?? '')) return false;
+    }
+    // Bound params: col = ?N (not preceded by ! or < or >)
+    for (const [, col, idx] of where.matchAll(/(\w+)\s*(?<![!<>])=\s*\?(\d+)/g)) {
       if (String(row[col!] ?? '') !== String(params[Number(idx) - 1] ?? '')) return false;
     }
     // Literals: col = 0. Without this the fake cannot express `hidden = 0`, so
@@ -47,7 +83,14 @@ function makeFakeDb() {
           return stmt;
         },
         async first() {
-          return ensure(table).filter((r) => matches(r, bound, sql))[0] ?? null;
+          const rows = ensure(table).filter((r) => matches(r, bound, sql));
+          // SELECT COUNT(*) AS n — countPaymentsByTracking relies on this, and
+          // without it duplicate-tracking detection silently always saw zero.
+          if (/COUNT\s*\(\s*\*\s*\)\s+AS\s+(\w+)/i.test(sql)) {
+            const alias = /COUNT\s*\(\s*\*\s*\)\s+AS\s+(\w+)/i.exec(sql)![1]!;
+            return { [alias]: rows.length };
+          }
+          return rows[0] ?? null;
         },
         async all() {
           return { results: ensure(table).filter((r) => matches(r, bound, sql)), meta: {} };
@@ -59,6 +102,7 @@ function makeFakeDb() {
             cols.forEach((c, i) => {
               row[c] = bound[i] ?? null;
             });
+            assertFk(table, row);
             ensure(table).push(row);
             return { meta: { changes: 1 }, results: [] };
           }
@@ -70,6 +114,7 @@ function makeFakeDb() {
               for (const [, col, idx] of sets.matchAll(/(\w+)\s*=\s*\?(\d+)/g)) {
                 r[col!] = bound[Number(idx) - 1];
               }
+              assertFk(table, r);
             });
             return { meta: { changes: rows.length }, results: [] };
           }
@@ -151,6 +196,18 @@ beforeEach(() => {
     created_at: Date.now(),
   });
 });
+
+/** A minimal R2: records what was put, which is all the receipt path needs. */
+function makeR2() {
+  const objects = new Map<string, number>();
+  return {
+    objects,
+    put: async (key: string, body: ArrayBuffer) => {
+      objects.set(key, body.byteLength);
+      return { key };
+    },
+  };
+}
 
 function envFor(extra: Partial<Env> = {}): Env {
   return {
@@ -622,6 +679,89 @@ describe('content security policy', () => {
     const csp = (await get('/')).headers.get('content-security-policy') ?? '';
     expect(csp).toContain("script-src 'self' 'unsafe-inline'");
     expect(csp).not.toContain('https://telegram.org');
+  });
+});
+
+/**
+ * The receipt path, end to end, against a fake D1 that enforces foreign keys.
+ *
+ * This is the test that was missing. `payments.reviewed_by` is
+ * `REFERENCES users(id)`, and the code used to write the literal 'ai' into it —
+ * a hard constraint violation on real SQLite. It survived 457 tests because
+ * nothing here ever ran `submitReceipt` far enough to write that column, and
+ * the fake enforced no constraints anyway. Both gaps are closed now.
+ */
+describe('/pub/api/receipt end to end', () => {
+  function seedOrder(id: string, code: string) {
+    fake.ensure('orders').push({
+      id, code, user_id: 'usr_1', kind: 'subscription', plan_id: 'p1',
+      amount: 90_000, status: 'awaiting_payment', gateway: 'card', gateway_ref: '',
+      coupon_code: '', discount: 0, paid_from_balance: 0, paid_at: null,
+      created_at: Date.now(),
+    });
+  }
+
+  function receiptForm(tracking: string): FormData {
+    const fd = new FormData();
+    fd.set('photo', new File([new Uint8Array([1, 2, 3])], 'r.jpg', { type: 'image/jpeg' }));
+    fd.set('payerCard', '6104337800001111');
+    fd.set('payerName', 'علی محمدی');
+    fd.set('trackingCode', tracking);
+    // No amount and no order code: this scores to `escalate`, not `approve`,
+    // so the test does not depend on fulfilment succeeding.
+    fd.set('note', tracking);
+    return fd;
+  }
+
+  async function submit(cookie: string, fd: FormData, r2: unknown) {
+    return worker.fetch(
+      new Request('https://shop.example.workers.dev/pub/api/receipt', {
+        method: 'POST',
+        headers: { cookie },
+        body: fd,
+      }),
+      envFor({ R2: r2 as Env['R2'] }),
+      ctx,
+    );
+  }
+
+  it('stores the receipt in R2 and records the payment', async () => {
+    const r2 = makeR2();
+    seedOrder('ord_1', 'AAAA-BBBB');
+    const res = await submit(orderCookie('ord_1', 's'.repeat(64)), receiptForm('TRK-1'), r2);
+    expect(res.status).toBe(200);
+    const d = await json(res);
+    expect(d.ok).toBe(true);
+    expect(d.verdict).toBe('escalate');
+    expect(r2.objects.size).toBe(1);
+    expect([...r2.objects.keys()][0]).toMatch(/^receipts\/ord_1\//);
+    expect(fake.ensure('payments')).toHaveLength(1);
+  });
+
+  it('a rejected receipt writes no label into the reviewed_by foreign key', async () => {
+    const r2 = makeR2();
+    seedOrder('ord_1', 'AAAA-BBBB');
+    seedOrder('ord_2', 'CCCC-DDDD');
+
+    const first = await submit(orderCookie('ord_1', 's'.repeat(64)), receiptForm('DUP-9'), r2);
+    expect((await json(first)).ok).toBe(true);
+
+    // Same tracking code again: screenReceipt hard-rejects a duplicate, which
+    // is the branch that writes reviewed_by. With the FK enforced, writing the
+    // literal 'ai' here throws instead of passing.
+    const second = await submit(orderCookie('ord_2', 's'.repeat(64)), receiptForm('DUP-9'), r2);
+    const d = await json(second);
+    expect(second.status).toBe(200);
+    expect(d.ok).toBe(true);
+    expect(d.verdict).toBe('reject');
+
+    const rejected = fake.ensure('payments').find((p) => p.status === 'rejected');
+    expect(rejected, 'the duplicate receipt should have been rejected').toBeTruthy();
+    // The point of the test: a label in a FK column is a constraint violation.
+    expect(rejected!.reviewed_by ?? null).toBe(null);
+    // A screened-out receipt rejects the *payment*; the order stays open so the
+    // buyer can try again. Only an admin's rejectPayment closes the order.
+    expect(fake.ensure('orders').find((o) => o.id === 'ord_2')!.status).toBe('awaiting_payment');
   });
 });
 

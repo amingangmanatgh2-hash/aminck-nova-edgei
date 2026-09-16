@@ -406,7 +406,7 @@ export async function submitReceipt(
       status: 'rejected',
       reviewNote: verdict.summary,
       reviewedAt: now(),
-      reviewedBy: 'ai',
+      reviewedBy: reviewerRef('ai').id,
     });
   }
 
@@ -422,6 +422,23 @@ export async function submitReceipt(
 /**
  * Approve a payment. Idempotent: approving twice delivers once.
  */
+/**
+ * Split a reviewer into what may legally go in a foreign key and what may not.
+ *
+ * `payments.reviewed_by` and `audit_log.actor_id` are both
+ * `REFERENCES users(id)`. Callers pass labels like 'ai' and 'admin' for
+ * reviews that no user performed, and writing a label into a FK column is a
+ * hard constraint violation on any SQLite with foreign_keys on — which is what
+ * D1 runs. The fake D1 in the test suite enforces nothing, which is why this
+ * survived 457 passing tests and only showed up against real SQLite.
+ *
+ * A real user id has the `usr_` prefix that newId('usr') mints; anything else
+ * is a label and belongs in actor_label, never in the FK column.
+ */
+export function reviewerRef(reviewer: string): { id: string | null; label: string } {
+  return reviewer.startsWith('usr_') ? { id: reviewer, label: 'admin' } : { id: null, label: reviewer };
+}
+
 export async function approvePayment(
   svc: Services,
   paymentId: string,
@@ -436,14 +453,16 @@ export async function approvePayment(
     return payment.orderId ? svc.store.getOrder(payment.orderId) : null;
   }
 
+  const by = reviewerRef(reviewer);
   await svc.store.updatePayment(paymentId, {
     status: 'approved',
-    reviewedBy: reviewer,
+    reviewedBy: by.id,
     reviewedAt: now(),
     reviewNote: note,
   });
   await svc.store.audit({
-    actorId: reviewer === 'ai' ? null : reviewer,
+    actorId: by.id,
+    actorLabel: by.label,
     action: 'payment.approve',
     targetType: 'payment',
     targetId: paymentId,
@@ -465,9 +484,10 @@ export async function rejectPayment(
   if (payment.status === 'approved') {
     throw new ServiceError('این پرداخت تأیید شده و قابل رد کردن نیست', 'already_approved');
   }
+  const by = reviewerRef(reviewer);
   await svc.store.updatePayment(paymentId, {
     status: 'rejected',
-    reviewedBy: reviewer,
+    reviewedBy: by.id,
     reviewedAt: now(),
     reviewNote: reason,
   });
@@ -475,7 +495,8 @@ export async function rejectPayment(
     await svc.store.updateOrder(payment.orderId, { status: 'rejected' });
   }
   await svc.store.audit({
-    actorId: reviewer,
+    actorId: by.id,
+    actorLabel: by.label,
     action: 'payment.reject',
     targetType: 'payment',
     targetId: paymentId,
