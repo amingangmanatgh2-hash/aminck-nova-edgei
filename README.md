@@ -1,4 +1,4 @@
-# Minecraft God Server
+# Nova Edge — Minecraft God Server + ConfigBot
 
 پلتفرم کامل سرور ماینکرفت روی **Cloudflare Workers + D1 + KV + R2 + Durable Objects**:
 سایت، فروشگاه با احراز هویت OTP، پنل ادمین، آنتی‌چیت چندلایه، بات‌های هوشمند تطبیقی،
@@ -23,6 +23,9 @@
 | بخش ترموکس (جی‌پی‌اس، سیو مکان، دستیار آفلاین) | ✅ ساخته و تست شده (۱۸۲ تست) — جی‌پی‌اس سخت‌افزاری روی گوشی تست نشده |
 | رانتایم ماینکرفت | ⚠️ Dockerfile + پلاگین آماده، ولی **روی Cloudflare قابل اتصال عمومی نیست** |
 | ۶۰۰ پلیر روی پلن رایگان | ❌ **ناممکن** — به محدودیت‌های فیزیکی برمی‌گردد، نه به کد |
+| **ConfigBot** (ربات فروش کانفیگ VPN + مینی‌اپ + پنل + سایت) | ✅ ساخته و تست شده (۳۱۴ تست) |
+| سایت فروش ConfigBot (`/`, `/download`, `/panel`) | ✅ ساخته و تست شده در سطح HTTP — در مرورگر رندر نشده |
+| فایل نصب اختصاصی exe/apk | ❌ **عمداً ساخته نشد** — به‌جایش لینک بیلد رسمی و متن‌باز (Hiddify / v2rayNG / v2rayN) |
 | دیپلوی | ❌ از این محیط انجام نشد (بدون دسترسی به `api.cloudflare.com`) |
 
 ## بخش ترموکس — برنامه‌ی کاملاً آفلاین
@@ -103,8 +106,47 @@ src/
   do/objects.ts         ServerLock، Matchmaker، AntiCheatOracle
   ui/                   سایت و پنل ادمین (بدون CDN)
 minecraft/              Dockerfile + پریست کم‌مصرف + پلاگین GodBridge
-docs/FEASIBILITY.md     امکان‌سنجی با استناد به مستندات رسمی
+
+configbot/              ربات فروش کانفیگ VPN (Cloudflare Worker جداگانه)
+  src/index.ts            ورودی Worker: وب‌هوک، سایت، API، پنل، کرون‌ها
+  src/config/uri.ts       ساخت/اعتبارسنجی URI برای ۶ پروتکل
+  src/config/subscription.ts  ۵ فرمت اشتراک (base64, clash, singbox, wg, raw)
+  src/config/generate.ts  صدور، چرخش، واترمارک
+  src/node/               NodeDriver + MarzbanDriver + MockNodeDriver
+  src/pay/gateways.ts     کارت‌به‌کارت، کیف پول، زرین‌پال، نکست‌پی + غربالگری فیش
+  src/ai/brain.ts         ابزار-محور؛ پول و سهمیه فقط از D1، هرگز از مدل
+  src/api/public.ts       API عمومی سایت (بدون initData)
+  src/ui/site.ts          سایت فروش — server-rendered، بدون build step
+  src/ui/clients.ts       لینک بیلد رسمی کلاینت‌ها (تأییدشده با GitHub API)
+  src/ui/miniapp.ts       مینی‌اپ تلگرام
+  src/ui/admin.ts         پنل ادمین
+  test/                   ۹ سوئیت، ۳۱۴ تست
+
+docs/FEASIBILITY.md     امکان‌سنجی ماینکرفت با استناد به مستندات رسمی
+docs/CONFIGBOT-LIMITS.md    محدودیت‌های صادقانهٔ ConfigBot + فهرست TESTED = NO
 ```
+
+## ConfigBot — سایت و ربات فروش کانفیگ
+
+```
+/            ویترین: پلن‌ها، راهنما، سؤالات
+/download    برنامه‌ها: Hiddify، v2rayNG، v2rayN — بیلد رسمی، لینک مستقیم
+/panel       کانفیگ‌های من: با لینک اشتراک وارد شو، کانفیگ و وضعیت را ببین
+/app         مینی‌اپ تلگرام
+/admin       پنل ادمین
+/s/<token>   لینک اشتراک (۵ فرمت، بر اساس User-Agent)
+/webhook     وب‌هوک تلگرام
+```
+
+**چرا فایل exe/apk اختصاصی ندارد:** کلاینت VPN باینری native است و toolchain
+و امضای release می‌خواهد. در این محیط هیچ‌کدام نیست، و نصب‌کننده‌ی VPN
+امضانشده بدترین چیزی است که می‌شود به کسی داد. به‌جایش همان برنامه‌های
+متن‌باز و رسمی لینک شده‌اند؛ نام هر asset از GitHub API گرفته و هر URL با
+HEAD تأیید شده. جزئیات در `docs/CONFIGBOT-LIMITS.md` §۵٫۵.
+
+**سرور VPN کجاست؟** روی Cloudflare نمی‌آید — Workers هیچ TCP/UDP خامی ندارند.
+Xray یا Marzban باید روی یک VPS باشد؛ بقیه‌ی چیزها (ربات، سایت، مینی‌اپ، پنل،
+پرداخت، صدور کانفیگ، لینک اشتراک) همه روی Cloudflare‌اند.
 
 ## قانون آنتی‌چیت
 

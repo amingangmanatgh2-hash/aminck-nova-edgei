@@ -11,6 +11,9 @@ import { mapNodesWithDrivers } from './bootstrap';
 import { renderUris, headersFor } from './config/generate';
 import { checkWebhookSecret } from './bot/telegram';
 import { renderMiniApp } from './ui/miniapp';
+import { renderSite } from './ui/site';
+import { handlePublicApi } from './api/public';
+import { guessPlatform } from './ui/clients';
 import { renderAdmin } from './ui/admin';
 
 /**
@@ -49,15 +52,31 @@ export interface ExecutionContext {
   waitUntil(p: Promise<unknown>): void;
 }
 
-const CSP = [
+const CSP_BASE = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://telegram.org",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
-  "connect-src 'self' https://api.telegram.org",
-  "frame-ancestors https://web.telegram.org https://telegram.org",
   "base-uri 'self'",
   "form-action 'self'",
+];
+
+/**
+ * The mini app and the admin panel run inside Telegram's iframe, so they are
+ * pinned to it. The public shop must NOT be: a frame-ancestors list naming
+ * only telegram.org stops anyone else — a review panel, a status page, this
+ * project's own preview — from embedding it, and the shop gains nothing from
+ * the restriction because it holds no Telegram-only session.
+ */
+const CSP = [...CSP_BASE,
+  "script-src 'self' 'unsafe-inline' https://telegram.org",
+  "connect-src 'self' https://api.telegram.org",
+  "frame-ancestors https://web.telegram.org https://telegram.org",
+].join('; ');
+
+const CSP_PUBLIC = [...CSP_BASE,
+  "script-src 'self' 'unsafe-inline'",
+  "connect-src 'self'",
+  "frame-ancestors 'self'",
 ].join('; ');
 
 export default {
@@ -67,7 +86,17 @@ export default {
 
     try {
       if (path === '/healthz') return json({ ok: true, ts: Date.now() });
-      if (path === '/') return landing(env);
+      if (path === '/' || path === '/download' || path === '/panel') {
+        return site(request, env, url, path);
+      }
+      if (path.startsWith('/pub/api/')) {
+        return handlePublicApi(request, url, {
+          deps: await depsFor(env),
+          r2: env.R2,
+          secret: env.WEBHOOK_SECRET,
+          publicUrl: env.PUBLIC_URL ?? url.origin,
+        });
+      }
       if (path.startsWith('/api/')) return handleApi(request, url, await depsFor(env));
       if (path.startsWith('/admin/api/')) {
         const session = await readAdminSession(request, env);
@@ -79,7 +108,19 @@ export default {
       if (path.startsWith('/admin')) return admin(request, env, url);
       if (path === '/webhook') return webhook(request, env, ctx);
       if (path.startsWith('/pay/callback/')) return gatewayCallback(request, env, path);
-      if (path === '/robots.txt') return text('User-agent: *\nDisallow: /admin\nDisallow: /s/\n');
+      if (path === '/robots.txt') {
+        // /panel renders a user's live configs once they paste a token, and
+        // /pub/api is a JSON surface — neither belongs in a search index. The
+        // shop pages themselves should be crawlable.
+        return text(
+          'User-agent: *\n' +
+            'Disallow: /admin\n' +
+            'Disallow: /panel\n' +
+            'Disallow: /s/\n' +
+            'Disallow: /pub/\n' +
+            'Disallow: /api/\n',
+        );
+      }
       return notFound(path);
     } catch (e) {
       const err = e as Error;
@@ -238,37 +279,50 @@ function adminAllowList(env: Env): number[] {
     .filter((n) => Number.isInteger(n) && n > 0);
 }
 
-function landing(env: Env): Response {
-  const html = `<!doctype html>
-<html lang="fa" dir="rtl">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ربات خرید کانفیگ</title>
-<style>
-  :root { color-scheme: dark; }
-  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
-         background:#0b0f14; color:#e6edf3; min-height:100vh; display:grid; place-items:center; }
-  main { max-width:44rem; padding:2rem; }
-  h1 { font-size:1.6rem; margin:0 0 .5rem; }
-  p { color:#9fb0c0; line-height:1.9; }
-  a.btn { display:inline-block; margin-top:1rem; padding:.7rem 1.4rem; border-radius:.6rem;
-          background:#2f81f7; color:#fff; text-decoration:none; font-weight:600; }
-  code { background:#161b22; padding:.1rem .4rem; border-radius:.3rem; }
-</style>
-</head>
-<body>
-<main>
-  <h1>ربات خرید کانفیگ VPN</h1>
-  <p>برای خرید، دریافت کانفیگ و تمدید، در تلگرام به ربات پیام بده.
-     لینک اشتراک تو همیشه ثابت می‌ماند و با هر کلاینتی کار می‌کند.</p>
-  <p>مسیرهای این ورکر: <code>/healthz</code>، <code>/s/&lt;token&gt;</code>،
-     <code>/app</code>، <code>/admin</code>، <code>/webhook</code>.</p>
-  ${env.BOT_TOKEN ? '' : '<p style="color:#f85149">BOT_TOKEN تنظیم نشده — ربات کار نمی‌کند.</p>'}
-</main>
-</body>
-</html>`;
-  return htmlResponse(html);
+/**
+ * The public website: /, /download and /panel.
+ *
+ * Everything on it is read from D1 at request time — prices from `plans`,
+ * the support links and currency from `settings`. Nothing is baked into the
+ * HTML at build time, so an admin changing a plan in the panel changes the
+ * site on the next request.
+ */
+async function site(request: Request, env: Env, url: URL, path: string): Promise<Response> {
+  const deps = await depsFor(env);
+  const settings = await getSettings(env.DB);
+  const plans = await deps.services.store.listPlans(false);
+
+  const mode = path === '/download' ? 'download' : path === '/panel' ? 'panel' : 'landing';
+  const html = renderSite({
+    mode,
+    plans: plans.map((p) => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      trafficGb: p.trafficGb,
+      durationDays: p.durationDays,
+      maxDevices: p.maxDevices,
+      badge: p.badge,
+    })),
+    settings: {
+      botName: settings.botName,
+      currency: settings.currency,
+      supportChat: settings.supportChat,
+      supportChannel: settings.supportChannel,
+      maintenanceMode: settings.maintenanceMode,
+      maintenanceMessage: settings.maintenanceMessage,
+    },
+    platform: guessPlatform(request.headers.get('user-agent')),
+    userAgent: request.headers.get('user-agent'),
+    botUsername: env.BOT_TOKEN ? await botUsernameFor(env.BOT_TOKEN) : '',
+    // A card number is the only thing that makes web checkout real. Without
+    // one the plan cards point at the bot instead of offering a form that
+    // could not take money.
+    cardEnabled: Boolean(settings.cardNumber),
+    publicUrl: env.PUBLIC_URL ?? url.origin,
+    initialToken: url.searchParams.get('sub') ?? undefined,
+  });
+  return htmlResponse(html, {}, CSP_PUBLIC);
 }
 
 /**
@@ -748,11 +802,15 @@ function text(body: string, status = 200): Response {
   });
 }
 
-function htmlResponse(html: string, extra: Record<string, string> = {}): Response {
+function htmlResponse(
+  html: string,
+  extra: Record<string, string> = {},
+  csp: string = CSP,
+): Response {
   return new Response(html, {
     headers: {
       'content-type': 'text/html; charset=utf-8',
-      'content-security-policy': CSP,
+      'content-security-policy': csp,
       'x-content-type-options': 'nosniff',
       'cache-control': 'no-store',
       ...extra,
