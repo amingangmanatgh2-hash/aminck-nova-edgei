@@ -185,17 +185,54 @@ async function miniApp(env: Env, url: URL): Promise<Response> {
 }
 
 async function admin(request: Request, env: Env, url: URL): Promise<Response> {
+  if (url.pathname === '/admin/logout') {
+    const html = renderAdmin({ mode: 'login' });
+    return htmlResponse(html, { 'set-cookie': logoutCookie() });
+  }
+
+  // Login. The form posts the Telegram id; we check it against the allow-list
+  // and, only then, set the session cookie. Without this branch the panel is
+  // permanently stuck on the login screen, because nothing ever writes the
+  // cookie that readAdminSession looks for.
+  const submitted = url.searchParams.get('tg');
+  if (submitted && !request.headers.get('cookie')?.includes('admin_session=')) {
+    const telegramId = Number(submitted);
+    if (!Number.isInteger(telegramId) || telegramId <= 0) {
+      return htmlResponse(renderAdmin({ mode: 'login', error: 'شناسه باید یک عدد باشد' }));
+    }
+    if (!isAdminAllowed(telegramId, env)) {
+      // Deliberately the same wording as any other failure. Telling someone
+      // "you are not on the list" confirms the panel exists and who is on it.
+      return htmlResponse(renderAdmin({ mode: 'login', error: 'اجازه‌ی ورود نداری' }));
+    }
+    // Redirect so a refresh does not re-submit the id in the query string.
+    return new Response(null, {
+      status: 302,
+      headers: { location: '/admin', 'set-cookie': adminCookie(telegramId) },
+    });
+  }
+
   const session = await readAdminSession(request, env);
   if (!session.ok) {
     const html = renderAdmin({ mode: 'login', error: session.error });
     return htmlResponse(html);
   }
-  if (url.pathname === '/admin/logout') {
-    const html = renderAdmin({ mode: 'login' });
-    return htmlResponse(html, { 'set-cookie': logoutCookie() });
-  }
   const html = renderAdmin({ mode: 'panel', env: { publicUrl: url.origin } });
   return htmlResponse(html);
+}
+
+/** The allow-list is the only real gate on the admin panel. */
+function isAdminAllowed(telegramId: number, env: Env): boolean {
+  return adminAllowList(env).includes(telegramId);
+}
+
+function adminAllowList(env: Env): number[] {
+  return (env.ADMIN_USER_IDS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0);
 }
 
 function landing(env: Env): Response {
@@ -499,12 +536,7 @@ async function readAdminSession(request: Request, env: Env): Promise<AdminSessio
   const match = /admin_session=([0-9]+)/.exec(cookie);
   if (!match) return { ok: false, error: 'وارد شو' };
   const telegramId = Number(match[1]);
-  const allowed = (env.ADMIN_USER_IDS ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map(Number);
-  if (!allowed.includes(telegramId)) return { ok: false, error: 'اجازه‌ی ورود نداری' };
+  if (!isAdminAllowed(telegramId, env)) return { ok: false, error: 'اجازه‌ی ورود نداری' };
   return { ok: true, userId: telegramId };
 }
 
@@ -512,11 +544,20 @@ function logoutCookie(): string {
   return 'admin_session=; Path=/admin; Max-Age=0; HttpOnly; Secure; SameSite=Lax';
 }
 
+/**
+ * The session cookie.
+ *
+ * Honest about what this is: an id, not a signature. It holds up only because
+ * `readAdminSession` re-checks it against ADMIN_USER_IDS on every request and
+ * the cookie is HttpOnly + Secure + scoped to /admin. Anyone who can set
+ * cookies for this origin can already do worse, and anyone who cannot gets
+ * nothing out of guessing another admin's numeric Telegram id.
+ *
+ * A signed token would be better. It is not here, and pretending otherwise in
+ * a comment would be the actual bug.
+ */
 export function adminCookie(telegramId: number): string {
-  // NOTE: this is an id, not a signature. It only works because the allow-list
-  // is the real gate and the cookie is HttpOnly. A signed token would be better
-  // and is on the list.
-  return `admin_session=${telegramId}; Path=/admin; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`;
+  return `admin_session=${telegramId}; Path=/admin; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`;
 }
 
 // ------------------------------------------------------------------- deps --
@@ -529,13 +570,19 @@ export function adminCookie(telegramId: number): string {
  * labelled `mock` in the panel and its configs reach no real client, because
  * there is no server behind it.
  */
+// The node list lives in D1 and the admin panel can change it at any moment.
+// Caching it for the lifetime of an isolate means "I added a node" silently
+// does nothing until the isolate happens to be recycled, which reads exactly
+// like a broken panel. So the cache is short-lived: long enough that a burst of
+// webhook updates shares one query, short enough that an admin sees their
+// change within seconds.
+const DEPS_TTL_MS = 30_000;
 let cachedDeps: Promise<ApiDeps> | null = null;
-let cachedKey = '';
+let cachedAt = 0;
 
 async function depsFor(env: Env): Promise<ApiDeps> {
-  const key = `${env.ADMIN_USER_IDS ?? ''}|${env.ZARINPAL_MERCHANT ?? ''}`;
-  if (cachedDeps && cachedKey === key) return cachedDeps;
-  cachedKey = key;
+  if (cachedDeps && Date.now() - cachedAt < DEPS_TTL_MS) return cachedDeps;
+  cachedAt = Date.now();
   cachedDeps = (async () => {
     const store = new D1Store(env.DB);
     const { nodes, drivers } = await mapNodesWithDrivers(env.DB);
