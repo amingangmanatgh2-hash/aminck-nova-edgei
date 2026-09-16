@@ -232,12 +232,27 @@ describe('the public site', () => {
   it('every endpoint the page script calls is a real route', async () => {
     // The dead-button test: pull the fetch targets out of the served HTML and
     // confirm each one answers rather than 404ing.
-    const html = await (await get('/panel')).text();
-    const called = [...html.matchAll(/fetch\('([^']+)'/g)].map((m) => m[1]!.split('?')[0]!);
-    expect(called.length).toBeGreaterThan(0);
-    for (const path of called) {
-      const res = await get(path);
-      expect(res.status, path).not.toBe(404);
+    // Read the method too: POSTing-only endpoints 404 on a GET, which would
+    // look like a dead route when it is merely the wrong verb.
+    const html = (await (await get('/')).text()) + (await (await get('/panel')).text());
+    const calls = [...html.matchAll(/fetch\('([^']+)'(\s*,\s*\{([\s\S]*?)\})?\)/g)].map((m) => ({
+      path: m[1]!.split('?')[0]!,
+      method: /method\s*:\s*'(\w+)'/.exec(m[3] ?? '')?.[1] ?? 'GET',
+    }));
+    expect(calls.length).toBeGreaterThan(0);
+    for (const c of calls) {
+      const res = await worker.fetch(
+        new Request(`https://shop.example.workers.dev${c.path}`, {
+          method: c.method,
+          headers: { 'content-type': 'application/json' },
+          body: c.method === 'GET' ? undefined : '{}',
+        }),
+        envFor(),
+        ctx,
+      );
+      // 400/401/422 mean the route exists and rejected our empty input, which
+      // is exactly what we want to know. 404 means the page points at nothing.
+      expect(res.status, `${c.method} ${c.path}`).not.toBe(404);
     }
   });
 
@@ -438,6 +453,97 @@ describe('/pub/api/receipt', () => {
     expect(res.status).toBe(503);
     expect((await json(res)).error).toContain('R2');
     expect(cookie).toContain('pub_order=ord_1');
+  });
+});
+
+/**
+ * The dead-button guard.
+ *
+ * The buy flow shipped once reading `d.panelUrl` from the order response —
+ * a field `placeOrder` never returned — so the link rendered as
+ * href="undefined" and a web buyer could place an order with no way to pay
+ * for it. Nothing failed loudly: the endpoint was fine, the HTML was fine,
+ * the wiring between them was not.
+ *
+ * So: parse the served page, list the fields its script reads off the order
+ * response, and assert the real endpoint returns every one of them.
+ */
+describe('the page script and the API agree', () => {
+  it('every field the buy flow reads is one the order endpoint returns', async () => {
+    const html = await (await get('/')).text();
+    const js = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
+
+    // Scope to the checkout handler only. The page has two `d` variables — one
+    // from /pub/api/subscription, one from /pub/api/order — and scanning the
+    // whole script cross-contaminates them (d.subscription is not the order
+    // endpoint's business at all).
+    const from = js.indexOf('function showCheckout');
+    const to = js.indexOf('// Plans with no card configured');
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    const checkout = js.slice(from, to);
+
+    const reads = new Set<string>();
+    for (const m of checkout.matchAll(/\bd\.([A-Za-z][A-Za-z0-9_]*)/g)) reads.add(m[1]!);
+    const payReads = new Set<string>();
+    for (const m of checkout.matchAll(/\bd\.pay\.([A-Za-z][A-Za-z0-9_]*)/g)) payReads.add(m[1]!);
+    expect(reads.size).toBeGreaterThan(0);
+    expect(payReads.size).toBeGreaterThan(0);
+
+    // `pay` has two shapes — card instructions, or "unavailable" with a reason
+    // — and the page branches on `pay.kind`. So the honest check is against the
+    // union of both, not against whichever one this fixture happens to produce.
+    const shape = async (cardNumber: string) => {
+      if (cardNumber) fake.ensure('settings')[0]!.card_number = cardNumber;
+      else fake.ensure('settings')[0]!.card_number = '';
+      resetDepsCache();
+      const res = await worker.fetch(
+        new Request('https://shop.example.workers.dev/pub/api/order', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ planId: 'p1', telegramId: 111 }),
+        }),
+        envFor(),
+        ctx,
+      );
+      return (await res.json()) as Record<string, unknown>;
+    };
+
+    const withoutCard = await shape('');
+    expect(withoutCard.ok).toBe(true);
+    const withCard = await shape('6104337890123456');
+    expect(withCard.ok).toBe(true);
+    expect((withCard.pay as { kind: string }).kind).toBe('instructions');
+    expect((withoutCard.pay as { kind: string }).kind).toBe('unavailable');
+
+    const topKeys = new Set([...Object.keys(withoutCard), ...Object.keys(withCard)]);
+    const payKeys = new Set([
+      ...Object.keys(withoutCard.pay as object),
+      ...Object.keys(withCard.pay as object),
+    ]);
+
+    for (const key of reads) {
+      expect([...topKeys], `page reads d.${key} but the API never returns it`).toContain(key);
+    }
+    for (const key of payReads) {
+      expect([...payKeys], `page reads d.pay.${key} but the API never returns it`).toContain(key);
+    }
+  });
+
+  it('the page contains no href to a literal undefined', async () => {
+    for (const path of ['/', '/download', '/panel']) {
+      const html = await (await get(path)).text();
+      expect(html, path).not.toContain('href="undefined"');
+      expect(html, path).not.toContain('>undefined<');
+    }
+  });
+
+  it('the receipt endpoint is actually reachable from the page script', async () => {
+    // An endpoint with no caller is a feature that does not exist. The buy
+    // flow has to hand the customer a way to send the receipt.
+    const html = await (await get('/')).text();
+    expect(html).toContain('/pub/api/receipt');
+    expect(html).toContain("type=\"file\"");
   });
 });
 

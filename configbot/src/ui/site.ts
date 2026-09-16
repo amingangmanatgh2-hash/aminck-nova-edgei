@@ -550,13 +550,88 @@ const JS = `
         body: JSON.stringify({ planId: planId, telegramId: Number(tg) })
       }).then(function(r){ return r.json(); }).then(function(d){
         if(!d.ok){ res.innerHTML = '<p class="bad">' + esc(d.error||'خطا') + '</p>'; return; }
-        res.innerHTML =
-          '<div class="note">' +
-          '<b>سفارش ' + esc(d.orderCode) + ' ثبت شد.</b><br>' +
-          'مبلغ: ' + esc(d.amountText) + '<br>' +
-          '<a href="' + esc(d.panelUrl) + '">ادامه‌ی پرداخت و ارسال فیش</a>' +
-          '</div>';
+        showCheckout(res, d);
       }, function(){ res.innerHTML = '<p class="bad">خطای شبکه.</p>'; });
+    };
+  }
+
+  /**
+   * The second half of checkout: pay, then hand us the receipt.
+   *
+   * This is the step that was missing entirely — the order was created and the
+   * page then linked to a field the API never returned, so a web buyer could
+   * place an order and had no way to pay for it. Everything here reads only
+   * fields that placeOrder actually sends back. (No backticks in this comment:
+   * the whole block is a template literal, and a stray one closes the string.)
+   */
+  function showCheckout(res, d){
+    var h = '<div class="note"><b>سفارش ' + esc(d.orderCode) + ' ثبت شد.</b><br>' +
+            'مبلغ قابل پرداخت: <b>' + esc(d.amountText) + '</b></div>';
+
+    if(!d.pay || d.pay.kind !== 'instructions'){
+      h += '<div class="note warn">' +
+           esc((d.pay && d.pay.reason) || 'پرداخت آنلاین فعال نیست.') +
+           '</div>';
+      res.innerHTML = h;
+      return;
+    }
+
+    h += '<h3>۱. واریز کن</h3>';
+    h += '<pre class="uri">' + esc(d.pay.text) + '</pre>';
+    if(d.pay.tracking){
+      h += '<p>کد پیگیری سفارش: <b>' + esc(d.pay.tracking) + '</b><br>' +
+           '<span class="muted">همین کد را در توضیحات انتقال بنویس، وگرنه ' +
+           'پرداختت به این سفارش وصل نمی‌شود.</span></p>';
+    }
+
+    h += '<h3>۲. عکس فیش را بفرست</h3>';
+    h += '<form id="rcpt">' +
+         '<div class="row"><input id="rname" placeholder="نام صاحب کارت" required></div>' +
+         '<div class="row"><input id="rcard" inputmode="numeric" placeholder="شماره کارت پرداخت‌کننده" required></div>' +
+         '<div class="row"><input id="rtrack" placeholder="کد پیگیری بانک" value="' +
+           esc(d.pay.tracking || '') + '" required></div>' +
+         '<div class="row"><input id="rnote" placeholder="متن توضیحاتی که نوشتی (مثلاً: ۹۰۰۰۰ تومان)"></div>' +
+         '<div class="row"><input id="rphoto" type="file" accept="image/jpeg,image/png,image/webp" required></div>' +
+         '<button class="btn" type="submit">ارسال فیش</button>' +
+         '</form>';
+    h += '<div id="rcptres"></div>';
+    res.innerHTML = h;
+
+    var f = $('#rcpt');
+    if(!f) return;
+    f.onsubmit = function(e){
+      e.preventDefault();
+      var out = $('#rcptres');
+      var file = $('#rphoto').files[0];
+      if(!file){ out.innerHTML = '<p class="bad">عکس فیش را انتخاب کن.</p>'; return; }
+      if(file.size > 5 * 1024 * 1024){
+        out.innerHTML = '<p class="bad">حجم عکس باید کمتر از ۵ مگابایت باشد.</p>'; return;
+      }
+
+      var fd = new FormData();
+      fd.set('photo', file);
+      fd.set('payerName', $('#rname').value.trim());
+      fd.set('payerCard', $('#rcard').value.trim());
+      fd.set('trackingCode', $('#rtrack').value.trim());
+      fd.set('note', $('#rnote').value.trim());
+
+      out.innerHTML = '<p><span class="spin"></span> در حال ارسال فیش…</p>';
+      fetch('/pub/api/receipt', { method:'POST', body: fd })
+        .then(function(r){ return r.json().then(function(j){ return { status:r.status, body:j }; }); })
+        .then(function(x){
+          var b = x.body || {};
+          if(!b.ok){
+            out.innerHTML = '<p class="bad">' + esc(b.error || ('خطا (' + x.status + ')')) + '</p>';
+            return;
+          }
+          if(b.alreadyPaid){
+            out.innerHTML = '<div class="note ok">این سفارش قبلاً پرداخت شده.</div>';
+            return;
+          }
+          out.innerHTML = '<div class="note ' + (b.autoApproved ? 'ok' : '') + '">' +
+            esc(b.message || 'فیشت ثبت شد.') + '</div>';
+          f.querySelector('button[type=submit]').disabled = true;
+        }, function(){ out.innerHTML = '<p class="bad">خطای شبکه. دوباره تلاش کن.</p>'; });
     };
   }
 
