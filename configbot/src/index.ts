@@ -1,5 +1,8 @@
 import { getSettings, type Settings } from './db/db';
 import { handleAdminApi, handleApi, type ApiDeps } from './api/routes';
+import { buildRegistry, callbackParams } from './pay/gateways';
+import { audit } from './db/db';
+import { markPaid } from './service/orders';
 import { handleUpdate as handleBotUpdate } from './bot/handlers';
 import { D1Store } from './service/d1store';
 import { MockNodeDriver } from './node/driver';
@@ -268,19 +271,130 @@ function landing(env: Env): Response {
   return htmlResponse(html);
 }
 
+/**
+ * Gateway return URL.
+ *
+ * The buyer lands here after paying. We verify with the gateway's own API and
+ * only then mark the order paid — the amount we trust is the one on our order
+ * row, never a number from the query string, because a query string is the one
+ * part of this flow the buyer fully controls.
+ *
+ * Whatever happens, the response is a human-facing page: the buyer has just
+ * spent money and a JSON blob is not an answer.
+ */
 async function gatewayCallback(request: Request, env: Env, path: string): Promise<Response> {
-  const gateway = path.replace('/pay/callback/', '');
+  const gatewayId = path.replace('/pay/callback/', '');
   const url = new URL(request.url);
-  // The real verification lives in pay/gateways.ts; this route only routes.
-  return json(
-    {
-      ok: false,
-      error: 'این مسیر نیاز به پیکربندی درگاه دارد',
-      gateway,
-      params: Object.fromEntries(url.searchParams.entries()),
+  const params = callbackParams(url);
+  const deps = await depsFor(env);
+  const settings = await getSettings(env.DB);
+
+  const registry = buildRegistry({
+    card: {
+      cardNumber: settings.cardNumber,
+      cardHolder: settings.cardHolder,
+      cardBank: settings.cardBank,
+      extraMessage: settings.paymentMessage,
+      currency: settings.currency,
     },
-    501,
+    walletBalance: async (id) => (await deps.services.store.getUser(id))?.balance ?? 0,
+    zarinpal: {
+      merchantId: env.ZARINPAL_MERCHANT ?? '',
+      sandbox: false,
+      callbackUrl: `${env.PUBLIC_URL ?? url.origin}/pay/callback/zarinpal`,
+    },
+    nextpay: {
+      transId: env.NEXTPAY_TRANS ?? '',
+      callbackUrl: `${env.PUBLIC_URL ?? url.origin}/pay/callback/nextpay`,
+    },
+  });
+
+  const gateway = registry.get(gatewayId as 'zarinpal');
+  if (!gateway) return resultPage('درگاه نامعتبر', false);
+  if (!gateway.info().available) {
+    return resultPage('این درگاه هنوز در پنل تنظیم نشده است.', false);
+  }
+
+  // Find the order this callback belongs to. Gateways echo our own reference
+  // back; without a match there is nothing to credit and we must not guess.
+  const orderCode = params.order ?? params.order_id ?? params.code ?? '';
+  const order = orderCode ? await deps.services.store.getOrderByCode(orderCode) : null;
+  if (!order) {
+    return resultPage('سفارش مربوط به این پرداخت پیدا نشد. به پشتیبانی پیام بده.', false);
+  }
+
+  let verdict;
+  try {
+    verdict = await gateway.verify(params);
+  } catch (e) {
+    await audit(env.DB, {
+      action: 'payment.gateway_verify_error',
+      targetType: 'order',
+      targetId: order.id,
+      detail: JSON.stringify({ gateway: gatewayId, error: (e as Error).message }),
+    });
+    return resultPage('تأیید پرداخت با خطا مواجه شد. پول شما محفوظ است؛ به پشتیبانی پیام بده.', false);
+  }
+
+  await audit(env.DB, {
+    actorId: order.userId,
+    action: verdict.ok ? 'payment.gateway_approved' : 'payment.gateway_rejected',
+    targetType: 'order',
+    targetId: order.id,
+    detail: JSON.stringify({ gateway: gatewayId, ref: verdict.ref, detail: verdict.detail }),
+  });
+
+  if (!verdict.ok) {
+    return resultPage(`پرداخت ناموفق بود: ${verdict.detail}`, false);
+  }
+
+  try {
+    await markPaid(deps.services, order.id, gatewayId, verdict.ref);
+  } catch (e) {
+    // Verification succeeded but delivery failed. The money is real and
+    // recorded; the configs are the part that did not happen. Say exactly that
+    // rather than a generic error.
+    await audit(env.DB, {
+      action: 'payment.paid_but_fulfilment_failed',
+      targetType: 'order',
+      targetId: order.id,
+      detail: JSON.stringify({ error: (e as Error).message }),
+    });
+    return resultPage(
+      'پرداخت تأیید شد ولی صدور کانفیگ ناموفق بود. پول شما ثبت شده؛ به پشتیبانی پیام بده تا دستی تحویل بگیری.',
+      false,
+    );
+  }
+
+  return resultPage(
+    `پرداخت تأیید شد ✅\nکانفیگ‌هایت در ربات آماده است. کد سفارش: ${order.code}`,
+    true,
   );
+}
+
+function resultPage(message: string, ok: boolean): Response {
+  const html = `<!doctype html>
+<html lang="fa" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>${ok ? 'پرداخت موفق' : 'پرداخت ناموفق'}</title>
+<style>
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0f14;
+       color:#e6edf3;font-family:system-ui,Tahoma,sans-serif}
+  main{max-width:30rem;padding:2rem;text-align:center}
+  .mark{font-size:3rem}
+  p{white-space:pre-wrap;line-height:1.9;color:#9fb0c0}
+</style></head><body>
+<main><div class="mark">${ok ? '✅' : '⚠️'}</div><p>${escapeForHtml(message)}</p></main>
+</body></html>`;
+  return new Response(html, {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+  });
+}
+
+function escapeForHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 async function webhook(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -579,10 +693,24 @@ export function adminCookie(telegramId: number): string {
 const DEPS_TTL_MS = 30_000;
 let cachedDeps: Promise<ApiDeps> | null = null;
 let cachedAt = 0;
+let cachedDb: unknown = null;
+
+/** Exposed for tests; a stale cache across bindings is a real bug, not a nit. */
+export function resetDepsCache(): void {
+  cachedDeps = null;
+  cachedAt = 0;
+  cachedDb = null;
+}
 
 async function depsFor(env: Env): Promise<ApiDeps> {
-  if (cachedDeps && Date.now() - cachedAt < DEPS_TTL_MS) return cachedDeps;
+  // The DB binding is part of the key: caching nodes read from one database and
+  // serving them for another is the kind of staleness that is invisible right
+  // up until it is not.
+  if (cachedDeps && cachedDb === env.DB && Date.now() - cachedAt < DEPS_TTL_MS) {
+    return cachedDeps;
+  }
   cachedAt = Date.now();
+  cachedDb = env.DB;
   cachedDeps = (async () => {
     const store = new D1Store(env.DB);
     const { nodes, drivers } = await mapNodesWithDrivers(env.DB);
