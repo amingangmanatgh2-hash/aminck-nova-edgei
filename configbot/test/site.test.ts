@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import worker, { resetDepsCache, type Env } from '../src/index';
-import { orderCookie } from '../src/api/public';
+import { orderCookie, telegramTextToHtml } from '../src/api/public';
 
 /**
  * The public website and its API, driven through the real `fetch` handler.
@@ -544,6 +544,60 @@ describe('the page script and the API agree', () => {
     const html = await (await get('/')).text();
     expect(html).toContain('/pub/api/receipt');
     expect(html).toContain("type=\"file\"");
+  });
+});
+
+/**
+ * The card instructions are authored in Telegram MarkdownV2 because the bot is
+ * their main consumer. Shown raw on the web, a buyer sees asterisks around the
+ * amount they are about to transfer — so it gets converted, and the conversion
+ * has to be XSS-safe by construction, not by luck.
+ */
+describe('telegramTextToHtml', () => {
+  it('turns bold, code and fences into real markup', () => {
+    const html = telegramTextToHtml('مبلغ: *۹۰٬۰۰۰ تومان*\n```\n6104 3378\n```\nکد: `ABC-123`');
+    expect(html).toContain('<strong>۹۰٬۰۰۰ تومان</strong>');
+    expect(html).toContain('<pre>6104 3378</pre>');
+    expect(html).toContain('<code>ABC-123</code>');
+    expect(html).not.toContain('*');
+    expect(html).not.toContain('```');
+  });
+
+  it('newlines become <br> outside code blocks', () => {
+    const html = telegramTextToHtml('یک\nدو');
+    expect(html).toBe('یک<br>دو');
+  });
+
+  it('escapes HTML before applying markup, so injected tags cannot run', () => {
+    const html = telegramTextToHtml('<img src=x onerror=alert(1)> *bold*');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img');
+    expect(html).toContain('<strong>bold</strong>');
+  });
+
+  it('a script tag in an admin-controlled setting stays inert', () => {
+    const html = telegramTextToHtml('<script>alert(1)</scr' + 'ipt>');
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('the checkout renders pay.html, not the raw markdown text', async () => {
+    fake.ensure('settings')[0]!.card_number = '6104337890123456';
+    resetDepsCache();
+    const res = await worker.fetch(
+      new Request('https://shop.example.workers.dev/pub/api/order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ planId: 'p1', telegramId: 111 }),
+      }),
+      envFor(),
+      ctx,
+    );
+    const d = (await res.json()) as { pay: { kind: string; text: string; html: string } };
+    expect(d.pay.kind).toBe('instructions');
+    expect(d.pay.text).toContain('*'); // raw Telegram markdown, as authored
+    expect(d.pay.html).not.toContain('*'); // converted for the browser
+    expect(d.pay.html).toContain('6104');
   });
 });
 

@@ -388,6 +388,14 @@ padding:1rem;margin:1rem 0}
 pre.uri{background:#0d141b;border:1px solid var(--line);border-radius:.5rem;
 padding:.6rem;overflow-x:auto;font-size:.75rem;direction:ltr;text-align:left;
 white-space:pre-wrap;word-break:break-all;color:#a9c7e8;margin:.4rem 0}
+.paybox{background:#0d141b;border:1px solid var(--line);border-radius:.5rem;
+padding:.8rem .9rem;font-size:.92rem;line-height:2}
+.paybox pre{background:#111a23;border:1px solid var(--line);border-radius:.4rem;
+padding:.6rem;direction:ltr;text-align:left;font-size:1.05rem;letter-spacing:.06em;
+overflow-x:auto;margin:.5rem 0}
+.paybox code{background:#111a23;border:1px solid var(--line);border-radius:.3rem;
+padding:.05rem .35rem;direction:ltr;display:inline-block}
+.paybox strong{color:#fff}
 .sublink{background:#0d141b;border:1px solid var(--line);border-radius:.5rem;
 padding:.6rem;direction:ltr;text-align:left;word-break:break-all;font-size:.8rem}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:.2rem .9rem;font-size:.9rem}
@@ -577,7 +585,11 @@ const JS = `
     }
 
     h += '<h3>۱. واریز کن</h3>';
-    h += '<pre class="uri">' + esc(d.pay.text) + '</pre>';
+    // d.pay.html is escaped-then-marked-up server side, so it goes in as HTML.
+    // Falling back to the escaped raw text keeps this safe if html is absent.
+    h += d.pay.html
+      ? '<div class="paybox">' + d.pay.html + '</div>'
+      : '<pre class="uri">' + esc(d.pay.text || '') + '</pre>';
     if(d.pay.tracking){
       h += '<p>کد پیگیری سفارش: <b>' + esc(d.pay.tracking) + '</b><br>' +
            '<span class="muted">همین کد را در توضیحات انتقال بنویس، وگرنه ' +

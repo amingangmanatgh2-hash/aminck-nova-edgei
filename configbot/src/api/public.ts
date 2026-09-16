@@ -149,7 +149,7 @@ async function placeOrder(req: Request, ctx: PublicCtx): Promise<Response> {
   // honest way to take money on the web, so we say that instead of showing a
   // form that cannot work.
   let pay:
-    | { kind: 'instructions'; text: string; tracking: string }
+    | { kind: 'instructions'; text: string; html: string; tracking: string }
     | { kind: 'unavailable'; reason: string } = {
     kind: 'unavailable',
     reason: 'پرداخت کارت‌به‌کارت هنوز در پنل مدیر فعال نشده. برای خرید به ربات پیام بده.',
@@ -181,7 +181,12 @@ async function placeOrder(req: Request, ctx: PublicCtx): Promise<Response> {
       });
       if (res.kind === 'instructions') {
         await store.updateOrder(order.id, { status: 'awaiting_payment', gateway: 'card' });
-        pay = { kind: 'instructions', text: res.text, tracking: res.ref };
+        pay = {
+          kind: 'instructions',
+          text: res.text,
+          html: telegramTextToHtml(res.text),
+          tracking: res.ref,
+        };
       }
     }
   }
@@ -359,6 +364,41 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 // ------------------------------------------------------------------ helpers --
+
+/**
+ * Render the gateway's payment instructions for a browser.
+ *
+ * `CardGateway.start()` writes Telegram MarkdownV2 — `*bold*`, ``` fences,
+ * `code` — because the bot is its main consumer. Pasted into a web page that
+ * markup shows up literally, so a buyer sees asterisks around the amount they
+ * are about to transfer. This converts it instead.
+ *
+ * Escaping happens first and the result is inserted as HTML, which is safe by
+ * construction: nothing in the source text can become a tag, because every
+ * `<` and `&` is already an entity before any markup is applied.
+ */
+export function telegramTextToHtml(raw: string): string {
+  const esc = (v: string) =>
+    v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Pull fenced blocks out first so their contents are not re-parsed.
+  const blocks: string[] = [];
+  let out = esc(raw).replace(/```([\s\S]*?)```/g, (_m, code: string) => {
+    blocks.push(code.replace(/^\n+|\n+$/g, ''));
+    return `\u0000${blocks.length - 1}\u0000`;
+  });
+
+  out = out
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+    .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+    .replace(/\n/g, '<br>');
+
+  return out.replace(
+    /(?:<br>)?\u0000(\d+)\u0000(?:<br>)?/g,
+    (_m, i: string) => `<pre>${blocks[Number(i)] ?? ''}</pre>`,
+  );
+}
 
 function cleanToken(v: string): string {
   const m = /\/s\/([A-Za-z0-9_-]{6,})/.exec(v);
