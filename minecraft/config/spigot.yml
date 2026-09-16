@@ -1,0 +1,26 @@
+# CLOUDFLARE_LOW_RESOURCE — Spigot layer.
+settings:
+  save-user-cache-on-stop-only: true
+  moved-wrongly-threshold: 0.0625
+  moved-too-quickly-multiplier: 10.0
+  timeout-time: 60
+  restart-on-crash: false
+world-settings:
+  default:
+    view-distance: 6
+    entity-activation-range:
+      animals: 16
+      monsters: 24
+      raiders: 32
+      misc: 8
+    merge-radius:
+      exp: 6.0
+      item: 4.0
+    mob-spawn-range: 4
+    ticks-per:
+      hopper-transfer: 12
+      hopper-check: 4
+    hopper-amount: 3
+    max-tnt-per-tick: 60
+    arrow-despawn-rate: 600
+    nerf-spawner-mobs: true

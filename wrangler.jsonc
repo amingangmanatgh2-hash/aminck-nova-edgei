@@ -1,48 +1,64 @@
-// AMINCK Nova Edge — Cloudflare Workers configuration
-// Bindings:
-//   AMINCK_STORE  — Durable Object (SQLite-backed) that holds ALL state:
-//                   settings, users, admins, audit log, sessions, probe results.
-//                   No D1, no KV and no manual provisioning required: the
-//                   migration below creates the class automatically on deploy.
-// Secrets (set via `wrangler secret put` or the dashboard, NOT in this file):
-//   ADMIN_PASSWORD — password of the owner (username: AMINCK)
-//   SESSION_SECRET — HMAC-SHA256 key used to sign session cookies
+// Minecraft God Server — Cloudflare configuration
+//
+// HONEST NOTE ON NETWORKING (verified against Cloudflare docs, 2026-09-15):
+//   * Java Edition  TCP 25565 — reachable only via Cloudflare Spectrum, which
+//     needs an origin server. Public ingress to a Container requires the
+//     private-beta `connect(socket)` handler. See docs/FEASIBILITY.md.
+//   * Bedrock Edition UDP 19132 — explicitly NOT supported by Spectrum:
+//     "Minecraft Java Edition is supported but Minecraft Bedrock Edition is
+//     not supported." (developers.cloudflare.com/spectrum/reference/limitations)
+//   This platform therefore serves the web/API/panel layer, and the Minecraft
+//   runtime reports state to it over HTTP. Nothing here fakes a game server.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "aminck-nova-edgei",
+  "name": "minecraft-god-server",
   "main": "src/index.ts",
-  // Panel UI as Workers Static Assets (generated from src/ui.ts via
-  // `npm run build:public`). run_worker_first keeps ALL requests in the
-  // Worker so security headers and auth apply to every response; the
-  // Worker serves the files through the ASSETS binding.
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": true
+    "run_worker_first": true,
   },
-  "compatibility_date": "2025-06-01",
-  "compatibility_flags": [],
+
+  // Durable Objects
   "durable_objects": {
     "bindings": [
-      {
-        "name": "AMINCK_STORE",
-        "class_name": "AMINCKStore"
-      }
+      { "name": "SERVER_LOCK", "class_name": "ServerLock" },
+      { "name": "MATCHMAKER", "class_name": "Matchmaker" },
+      { "name": "ANTICHEAT", "class_name": "AntiCheatOracle" }
     ]
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["AMINCKStore"]
+      "new_sqlite_classes": ["ServerLock", "Matchmaker", "AntiCheatOracle"]
     }
   ],
-  // Automatic TCP/TLS reachability scan of the panel endpoints every 30 minutes.
+
+  // D1 — structured data
+  "d1_databases": [
+    { "binding": "GODDB", "database_name": "minecraft-god-server", "database_id": "REPLACE_WITH_REAL_ID" }
+  ],
+
+  // KV — cache, rate limits, OTP challenge metadata
+  "kv_namespaces": [
+    { "binding": "GODKV", "id": "REPLACE_WITH_REAL_ID" }
+  ],
+
+  // R2 — payment receipts, world snapshots, generated art
+  "r2_buckets": [
+    { "binding": "GODR2", "bucket_name": "minecraft-god-server" }
+  ],
+
+  // Workers AI — bot behaviour tiers, receipt review, dynamic pricing
+  "ai": { "binding": "AI" },
+
   "triggers": {
-    "crons": ["*/30 * * * *"]
+    "crons": ["*/5 * * * *", "*/30 * * * *", "0 4 * * *"]
   },
-  "observability": {
-    "enabled": true
-  },
-  "minify": true,
-  "logpush": false
+
+  "observability": { "enabled": true },
+  "minify": true
 }

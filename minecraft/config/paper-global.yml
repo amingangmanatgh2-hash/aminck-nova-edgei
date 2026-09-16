@@ -1,0 +1,33 @@
+# CLOUDFLARE_LOW_RESOURCE — Paper tuning for a constrained runtime.
+# Starting point only; measure TPS and memory before changing anything.
+chunks:
+  max-auto-save-chunks-per-tick: 4
+  prevent-moving-into-unloaded-chunks: true
+  entity-per-chunk-save-limit:
+    arrow: 16
+    experience_orb: 16
+    monster: 24
+  fixed-chunk-inhabited-time: -1
+misc:
+  max-entity-collisions: 4
+  update-pathfinding-on-block-update: false
+spawn-limits:
+  monster: 35
+  creature: 8
+  ambient: 4
+  axolotls: 4
+  underground_water_creature: 4
+  water_ambient: 4
+  water_creature: 6
+tick-rates:
+  behavior:
+    villager:
+      validatenearbypoi: 60
+  container-update: 2
+  grass-spread: 4
+  mob-spawner: 2
+  sensor:
+    villager:
+      secondarypoisensor: 80
+unsupported-settings:
+  disable-world-ticking-when-empty: true

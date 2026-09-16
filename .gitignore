@@ -2,6 +2,9 @@
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
+.env
+.env.*
+!.env.example
 
 # Dependencies
 node_modules/
@@ -12,16 +15,32 @@ out/
 .wrangler/
 coverage/
 *.tsbuildinfo
+.nova-build/
+.nova-test-workdir/
 
 # Local artifacts
 *.log
 .DS_Store
-.env
-.env.*
-!.env.example
 tmp/
-# Miniflare test workdir
 .nova-test-workdir/
 
-# esbuild temp output for scripts/build-public.mjs
-.nova-build/
+# Python (the Termux app)
+__pycache__/
+*.pyc
+
+# Termux runtime state. Generated on the phone, never committed:
+# saved places live in the SQLite DB, GPS cache and dialogue memory are
+# per-device. data/catalog.json and data/knowledge/ ARE committed — they are
+# inputs, not runtime state.
+data/nova.db
+data/nova.db-journal
+data/nova.db-wal
+data/nova.db-shm
+data/gps/
+data/memory/
+data/logs/
+data/places.json
+data/config.json
+
+# Release archives
+*.zip

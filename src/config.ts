@@ -1,498 +1,325 @@
 /**
- * AMINCK Nova Edge — subscription / config builder.
- * Pure module. Produces:
- *   - VLESS URI lines (raw + V2Ray base64)
- *   - Clash Meta YAML with NOVA-AUTO / NOVA-FALLBACK / NOVA-BALANCE / NOVA-SMART
- *   - sing-box JSON with TUN + Mixed + DoH + smart routing
+ * Minecraft God Server — central configuration: ranks, game modes, bot tiers,
+ * resource preset. Every number here is enforced server-side, never trusted
+ * from the client.
  */
-import type {
-  BuiltConfig,
-  ConfigFormat,
-  Endpoint,
-  Fingerprint,
-  PanelSettings,
-  ProfileMode,
-  Route,
-  SpeedPreset,
-  SpeedSpec,
-  User,
-} from './types';
-import { CLOUDFLARE_TLS_PORTS, FINGERPRINTS, SPEED_PRESETS } from './types';
-import { base64Encode, clamp } from './utils';
+import type { BotTierSpec, GameModeSpec, RankSpec, RankId } from './types';
 
-export const APP_NAME = 'AMINCK Nova Edge';
-export const BRAND = 'AMINCK';
-export const DEFAULT_NAME_TEMPLATE = '{brand} {profile} {index}';
-export const DEFAULT_DOH = 'https://cloudflare-dns.com/dns-query';
-export const DEFAULT_DOH_ALT = [
-  'https://one.one.one.one/dns-query',
-  'https://dns.google/dns-query',
-];
+export const APP_NAME = 'Minecraft God Server';
+export const BRAND = 'GodMC';
 
-// ---------------------------------------------------------------------------
-// Naming
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------- ranks
+export const RANKS: Record<RankId, RankSpec> = {
+  free: {
+    id: 'free',
+    labelFa: 'رایگان',
+    labelEn: 'Free',
+    tier: 0,
+    tag: '',
+    colour: '#9aa7b4',
+    priceUsd: null,
+    xpThreshold: 0,
+    maxPaths: 2,
+    permissions: ['play', 'chat'],
+    perks: ['lobby-access'],
+  },
+  noob: {
+    id: 'noob',
+    labelFa: 'نوب',
+    labelEn: 'Noob',
+    tier: 1,
+    tag: '[نوب]',
+    colour: '#8bc34a',
+    priceUsd: 99,
+    xpThreshold: 1_000,
+    maxPaths: 4,
+    permissions: ['play', 'chat', 'cosmetic:basic', 'party:create'],
+    perks: ['2-home', 'colored-chat'],
+  },
+  normal: {
+    id: 'normal',
+    labelFa: 'معمولی',
+    labelEn: 'Normal',
+    tier: 2,
+    tag: '[معمولی]',
+    colour: '#03a9f4',
+    priceUsd: 249,
+    xpThreshold: 5_000,
+    maxPaths: 8,
+    permissions: ['play', 'chat', 'cosmetic:basic', 'cosmetic:cape', 'party:create', 'queue:priority'],
+    perks: ['3-home', 'nick-color', 'queue-skip'],
+  },
+  pro: {
+    id: 'pro',
+    labelFa: 'پرو',
+    labelEn: 'Pro',
+    tier: 3,
+    tag: '[پرو]',
+    colour: '#9c27b0',
+    priceUsd: 499,
+    xpThreshold: 20_000,
+    maxPaths: 16,
+    permissions: ['play', 'chat', 'cosmetic:*', 'party:create', 'queue:priority', 'pet'],
+    perks: ['5-home', 'trail-effect', 'monthly-500-gems'],
+  },
+  god: {
+    id: 'god',
+    labelFa: 'گاد',
+    labelEn: 'God',
+    tier: 4,
+    tag: '[گاد]',
+    colour: '#ffc107',
+    priceUsd: 999,
+    xpThreshold: 60_000,
+    maxPaths: 32,
+    permissions: ['play', 'chat', 'cosmetic:*', 'party:create', 'queue:priority', 'pet', 'fly:lobby'],
+    perks: ['10-home', 'portal-effect', 'monthly-1500-gems', 'private-game'],
+  },
+  ultragod: {
+    id: 'ultragod',
+    labelFa: 'الترا گاد',
+    labelEn: 'Ultra God',
+    tier: 5,
+    tag: '[الترا گاد]',
+    colour: '#ff5252',
+    priceUsd: 1999,
+    xpThreshold: 150_000,
+    maxPaths: 64,
+    permissions: ['play', 'chat', 'cosmetic:*', 'party:create', 'queue:priority', 'pet', 'fly:lobby', 'beta-features'],
+    perks: ['20-home', 'custom-join-message', 'monthly-4000-gems', 'dedicated-slot', 'season-badge'],
+  },
+};
 
-export function profileLabel(mode: ProfileMode): string {
-  if (mode === 'fallback') return 'Fallback';
-  if (mode === 'balance') return 'Balance';
-  return 'Auto';
+export const RANK_ORDER: RankId[] = ['free', 'noob', 'normal', 'pro', 'god', 'ultragod'];
+
+export function rankByXp(xp: number): RankId {
+  let best: RankId = 'free';
+  for (const id of RANK_ORDER) if (xp >= RANKS[id]!.xpThreshold) best = id;
+  return best;
 }
 
-export interface NameVars {
-  brand: string;
-  app?: string;
-  user?: string;
-  profile?: ProfileMode;
-  index?: number;
-  endpoint?: string;
-  port?: number;
-}
+// -------------------------------------------------------------- game modes
+const m = (
+  id: string,
+  titleFa: string,
+  titleEn: string,
+  teamSize: number,
+  teamCount: number,
+  targetDurationS: number,
+  botSkills: string[],
+  rewards: { win: number; loss: number; kill: number; objective: number },
+  coins: { win: number; kill: number },
+): GameModeSpec => ({
+  id,
+  titleFa,
+  titleEn,
+  teamSize,
+  teamCount,
+  minPlayers: Math.max(2, Math.floor((teamSize * teamCount) / 3)),
+  maxPlayers: teamSize * teamCount,
+  targetDurationS,
+  rewards,
+  coins,
+  botSkills,
+  icon: `/img/modes/${id}.png`,
+  banner: `/img/modes/${id}-banner.png`,
+});
 
-/** Render a config-name template. Unknown variables stay untouched. */
-export function renderConfigName(template: string, vars: NameVars): string {
-  const app = vars.app ?? APP_NAME;
-  const brand = vars.brand || BRAND;
-  const profile = vars.profile ? profileLabel(vars.profile) : '';
-  const endpoint = vars.endpoint ?? '';
-  const port = vars.port ?? 443;
-  return (template || DEFAULT_NAME_TEMPLATE)
-    .replaceAll('{brand}', brand)
-    .replaceAll('{app}', app)
-    .replaceAll('{user}', vars.user ?? '')
-    .replaceAll('{profile}', profile)
-    .replaceAll('{index}', String(vars.index ?? ''))
-    .replaceAll('{endpoint}', endpoint)
-    .replaceAll('{port}', String(port))
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+export const GAME_MODES: Record<string, GameModeSpec> = Object.fromEntries(
+  [
+    m('bedwars', 'بدوارز', 'BedWars', 4, 4, 1500, ['build', 'combat', 'objective', 'economy'],
+      { win: 500, loss: 120, kill: 40, objective: 90 }, { win: 250, kill: 12 }),
+    m('skywars', 'اسکای‌وارز', 'SkyWars', 1, 12, 600, ['combat', 'loot', 'movement'],
+      { win: 400, loss: 90, kill: 50, objective: 0 }, { win: 200, kill: 15 }),
+    m('survivalgames', 'سروایول گیمز', 'Survival Games', 1, 24, 900, ['combat', 'loot', 'survival'],
+      { win: 450, loss: 100, kill: 45, objective: 0 }, { win: 220, kill: 14 }),
+    m('tntrun', 'تی‌ان‌تی ران', 'TNT Run', 1, 20, 420, ['movement', 'timing'],
+      { win: 300, loss: 70, kill: 0, objective: 30 }, { win: 150, kill: 0 }),
+    m('murdermystery', 'مردر میستری', 'Murder Mystery', 1, 12, 600, ['deduction', 'combat', 'stealth'],
+      { win: 380, loss: 85, kill: 60, objective: 40 }, { win: 190, kill: 18 }),
+    m('parkour', 'پارکور', 'Parkour', 1, 30, 300, ['movement', 'timing'],
+      { win: 250, loss: 50, kill: 0, objective: 60 }, { win: 120, kill: 0 }),
+    m('buildbattle', 'بیلد بتل', 'Build Battle', 2, 6, 720, ['build', 'creativity'],
+      { win: 420, loss: 110, kill: 0, objective: 80 }, { win: 210, kill: 0 }),
+    m('spleef', 'اسپلیف', 'Spleef', 1, 16, 360, ['timing', 'movement'],
+      { win: 280, loss: 60, kill: 20, objective: 0 }, { win: 140, kill: 8 }),
+    m('thebridge', 'بریج', 'The Bridge', 4, 2, 600, ['combat', 'build', 'objective'],
+      { win: 440, loss: 105, kill: 40, objective: 70 }, { win: 220, kill: 12 }),
+    m('uhc', 'یواچ‌سی', 'UHC', 2, 8, 1800, ['combat', 'survival', 'pvp'],
+      { win: 600, loss: 140, kill: 70, objective: 50 }, { win: 300, kill: 20 }),
+    m('zombiesurvival', 'زامبی سروایول', 'Zombie Survival', 4, 3, 900, ['combat', 'defense', 'objective'],
+      { win: 470, loss: 110, kill: 25, objective: 60 }, { win: 235, kill: 8 }),
+    m('kitpvp', 'کیت‌پی‌وی‌پی', 'KitPvP', 1, 24, 0, ['combat', 'pvp'],
+      { win: 0, loss: 0, kill: 30, objective: 0 }, { win: 0, kill: 10 }),
+    m('duels', 'دوئل', 'Duels', 1, 2, 300, ['combat', 'pvp'],
+      { win: 320, loss: 80, kill: 35, objective: 0 }, { win: 160, kill: 0 }),
+    m('factions', 'فکشنز لایت', 'Factions Lite', 4, 6, 0, ['build', 'economy', 'strategy', 'combat'],
+      { win: 520, loss: 130, kill: 35, objective: 65 }, { win: 260, kill: 11 }),
+  ].map((g) => [g.id, g]),
+);
 
-const ALLOWED_TEMPLATE_VARS = new Set(['brand', 'app', 'user', 'profile', 'index', 'endpoint', 'port']);
+export const MODE_IDS = Object.keys(GAME_MODES);
 
-export function validateNameTemplate(
-  template: string,
-): { ok: true; value: string } | { ok: false; error: string } {
-  if (template.length > 200) return { ok: false, error: 'قالب نام خیلی طولانی است (حداکثر ۲۰۰ کاراکتر)' };
-  const re = /\{([a-zA-Z]+)\}/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(template)) !== null) {
-    if (!ALLOWED_TEMPLATE_VARS.has(m[1]!)) {
-      return { ok: false, error: `متغیر ناشناخته در قالب: ${m[1]}` };
-    }
-  }
-  return { ok: true, value: template };
-}
+// ---------------------------------------------------------------- bot tiers
+/**
+ * Adaptive bot intelligence. The tier is chosen from the ELO of the *humans
+ * actually present in the match*, not from a constant — see bots/tiering.ts.
+ * Cheap models first; escalate as the lobby gets stronger.
+ */
+export const BOT_TIERS: Record<string, BotTierSpec> = {
+  nano: {
+    tier: 'nano',
+    model: '@cf/meta/llama-3.2-1b-instruct',
+    minAvgElo: 0,
+    minMaxElo: 0,
+    skill: 0.22,
+    reactionMs: [420, 900],
+    errorRate: 0.38,
+  },
+  micro: {
+    tier: 'micro',
+    model: '@cf/meta/llama-3.2-3b-instruct',
+    minAvgElo: 1150,
+    minMaxElo: 1300,
+    skill: 0.41,
+    reactionMs: [300, 650],
+    errorRate: 0.27,
+  },
+  small: {
+    tier: 'small',
+    model: '@cf/meta/llama-3.1-8b-instruct',
+    minAvgElo: 1450,
+    minMaxElo: 1700,
+    skill: 0.63,
+    reactionMs: [210, 470],
+    errorRate: 0.17,
+  },
+  pro: {
+    tier: 'pro',
+    model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    minAvgElo: 1800,
+    minMaxElo: 2100,
+    skill: 0.84,
+    reactionMs: [150, 340],
+    errorRate: 0.08,
+  },
+};
 
-export function fingerprintName(fp: Fingerprint): string {
-  return FINGERPRINTS.includes(fp) ? fp : 'chrome';
-}
+export const BOT_TIER_ORDER = ['nano', 'micro', 'small', 'pro'] as const;
 
-/** Validate a TLS port list for the settings page. */
-export function validateTlsPorts(ports: number[]): { ok: true; value: number[] } | { ok: false; error: string } {
-  if (ports.length === 0) return { ok: false, error: 'حداقل یک پورت TLS لازم است' };
-  const uniq = [...new Set(ports)].sort((a, b) => a - b);
-  for (const p of uniq) {
-    if (!Number.isInteger(p) || p < 1 || p > 65535) return { ok: false, error: `پورت نامعتبر: ${p}` };
-    if (!CLOUDFLARE_TLS_PORTS.includes(p)) {
-      return { ok: false, error: `پورت ${p} جزو پورتهای TLS مجاز کلودفلر نیست` };
-    }
-  }
-  return { ok: true, value: uniq };
-}
+// --------------------------------------------------- low-resource preset
+/**
+ * CLOUDFLARE_LOW_RESOURCE — conservative defaults for a constrained runtime.
+ * These are SAFE STARTING values, not measured optima: no benchmark has been
+ * run on Cloudflare Containers yet, so they are explicitly not claimed to be
+ * optimal. Tune after real profiling (see docs/FEASIBILITY.md).
+ */
+export const CLOUDFLARE_LOW_RESOURCE = {
+  maxPlayers: 20,
+  viewDistance: 6,
+  simDistance: 4,
+  maxEntitiesPerChunk: 8,
+  maxAutoSavePerTick: 4,
+  mobSpawnLimit: 35,
+  redstoneTickBudgetMs: 10,
+  saveIntervalTicks: 6000,
+  // Pre-generated worlds only: no chunk generation on player join.
+  pregenerateRadiusChunks: 16,
+  notes:
+    'Starting-point values. NOT benchmark-verified. Do not present as optimal.',
+} as const;
 
-// ---------------------------------------------------------------------------
-// Route generation
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------- economy
+export const ECONOMY = {
+  usdToCoins: 1000, // 1 USD => 1000 coins
+  dailyLoginCoins: 50,
+  referralRewardCoins: 300,
+  maxDiscountPct: 30,
+  maxBundleDiscountPct: 25,
+} as const;
 
-const SLUG_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
+// ----------------------------------------------------------- anti-cheat
+export const ANTICHEAT = {
+  /** Rolling window over which signals accumulate. */
+  windowMs: 5 * 60 * 1000,
+  /**
+   * Confidence required to reach each action tier.
+   * Calibrated against the simulation in test/anticheat-simulation.test.ts:
+   * 15 = hidden alert, 40 = match kick, 70 = temporary ban.
+   */
+  tierThresholds: [0, 15, 40, 70] as [number, number, number, number],
+  /** Above this, a temporary ban (never permanent). */
+  banThreshold: 70,
+  /**
+   * A single check can never push a player past this on its own. Set equal to
+   * the strongest check's points, so one fully-corroborated impossible-event
+   * check can reach a KICK but can never reach a BAN alone.
+   */
+  singleCheckCap: 55,
+  /** Corroborating observations needed before escalation. */
+  minSignalsForKick: 2,
+  minSignalsForBan: 4,
+  minDistinctChecksForKick: 2,
+  minDistinctChecksForBan: 2,
+  /**
+   * Weight at which a physically-impossible check may escalate on its own.
+   * Only members of IMPOSSIBLE_CHECKS qualify, and only ever to a kick.
+   */
+  decisiveWeight: 0.85,
+  /** Minecraft-legit reach: 3.0 blocks + tolerance for lag compensation. */
+  reachHardLimit: 3.6,
+  reachSuspicious: 3.1,
+  /** CPS: human upper bound, and the regularity floor. */
+  cpsHardLimit: 20,
+  cpsSuspicious: 15,
+  /** Below this coefficient of variation the clicking is machine-like. */
+  cvMachineLike: 0.06,
+  cvHuman: 0.16,
+  /** Network conditions that REDUCE suspicion. */
+  lagPingMs: 180,
+  lagPacketLossPct: 4,
+  /** Movement speeds (blocks/sec) that are physically plausible. */
+  walkSpeed: 4.317,
+  sprintSpeed: 5.612,
+  sprintJumpSpeed: 7.127,
+  speedHardMultiplier: 1.55,
+  /** Vertical: how long a player may keep gaining height without ground. */
+  flyMaxAirTicks: 30,
+  flySuspiciousAirTicks: 18,
+  /** FastBreak: min ms per block break by tool-less hand. */
+  fastBreakMinMs: 45,
+  /** X-ray: ore-per-minute that is suspicious without exploration. */
+  xrayOresPerMinute: 22,
+  xrayBlatantPerMinute: 40,
+  xrayStraightnessMin: 0.93,
+  /** Collusion: repeated unopposed kills between the same pair. */
+  collusionKillPairs: 8,
+  collusionWindowMs: 10 * 60 * 1000,
+  /** Temp ban duration when tier 4 fires. */
+  tempBanMs: 24 * 60 * 60 * 1000,
+  /** Evidence ring buffer, ms of history kept around an incident. */
+  evidenceBufferMs: 10_000,
+} as const;
 
-export function randomSlug(len = 8): string {
-  const buf = new Uint8Array(len);
-  crypto.getRandomValues(buf);
-  let out = '';
-  for (let i = 0; i < len; i++) out += SLUG_ALPHABET[buf[i]! % SLUG_ALPHABET.length];
-  return out;
-}
+// ------------------------------------------------------------------ otp
+export const OTP = {
+  codeLength: 5,
+  ttlMs: 3 * 60 * 1000,
+  maxVerifyAttempts: 5,
+  maxRequestsPerPhonePerHour: 5,
+  maxRequestsPerIpPerHour: 10,
+  /** Distinct accounts from one IP inside this window triggers an alert. */
+  ipClusterWindowMs: 60 * 60 * 1000,
+  ipClusterThreshold: 6,
+  /** Minimum delay before a code can be re-requested. */
+  resendCooldownMs: 90 * 1000,
+} as const;
 
-/** URL path a client connects to: `/e<slug><userId-hex>` — unique per route. */
-export function makeRoutePath(userId: string, slug: string): string {
-  return `/e${slug}${userId.replace(/-/g, '')}`;
-}
-
-export interface RoutePlan {
-  endpoint: Endpoint;
-  index: number;
-}
-
-/** Distribute `paths` routes across the given endpoints (round-robin). */
-export function planRoutes(endpoints: Endpoint[], paths: number): RoutePlan[] {
-  const list: RoutePlan[] = [];
-  const n = clamp(paths, 1, 200);
-  if (endpoints.length === 0) return list;
-  for (let i = 0; i < n; i++) {
-    const ep = endpoints[i % endpoints.length]!;
-    list.push({ endpoint: ep, index: i + 1 });
-  }
-  return list;
-}
-
-/** Create Route objects from a plan (each call gets fresh random paths). */
-export function buildRoutes(userId: string, plan: RoutePlan[]): Route[] {
-  let seq = 0;
-  return plan.map((p) => {
-    seq += 1;
-    const port = p.endpoint.port > 0 ? p.endpoint.port : 443;
-    return {
-      path: makeRoutePath(userId, randomSlug(6 + (seq % 3))),
-      endpointId: p.endpoint.id,
-      host: p.endpoint.host,
-      port,
-      index: p.index,
-      sni: p.endpoint.host,
-    };
-  });
-}
-
-// ---------------------------------------------------------------------------
-// VLESS URI
-// ---------------------------------------------------------------------------
-
-export function vlessUriFor(user: User, route: Route, o: UriOptions): string {
-  const params = [
-    ['encryption', 'none'],
-    ['security', 'tls'],
-    ['sni', route.host],
-    ['fp', fingerprintName(o.fingerprint)],
-    ['type', 'ws'],
-    ['host', route.host],
-    ['path', encodeURIComponent(route.path)],
-  ];
-  params.push(['ed', String(o.earlyData)]);
-  params.push(['allowInsecure', '0']);
-  const query = params.map(([k, v]) => `${k}=${v}`).join('&');
-  const frag = encodeURIComponent(o.name).replace(/%20/g, ' ');
-  return `vless://${user.uuid}@${route.host}:${route.port}?${query}#${frag}`;
-}
-
-export interface UriOptions {
-  fingerprint: Fingerprint;
-  earlyData: number;
-  name: string;
-}
-
-// ---------------------------------------------------------------------------
-// Formatting helpers
-// ---------------------------------------------------------------------------
-
-function yamlStr(s: string): string {
-  return JSON.stringify(s);
-}
-
-function yamlList(items: string[]): string {
-  return `[${items.map((n) => yamlStr(n)).join(', ')}]`;
-}
-
-const PRIVATE_V4_CIDRS = [
-  '0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16',
-  '172.16.0.0/12', '192.168.0.0/16', '192.0.0.0/24', '192.0.2.0/24',
-  '198.18.0.0/15', '198.51.100.0/24', '203.0.113.0/24',
-];
-const PRIVATE_V6_CIDRS = ['::1/128', 'fc00::/7', 'fe80::/10', 'ff00::/8', '2001:db8::/32'];
-
-export function privateCidrs(): { v4: string[]; v6: string[] } {
-  return { v4: [...PRIVATE_V4_CIDRS], v6: [...PRIVATE_V6_CIDRS] };
-}
-
-function healthUrlFor(settings: PanelSettings, firstRoute?: Route): string {
-  if (settings.healthUrl && settings.healthUrl.length > 0) return settings.healthUrl;
-  if (firstRoute) return `https://${firstRoute.host}/healthz`;
-  return 'https://www.gstatic.com/generate_204';
-}
-
-export function subUrlFor(token: string, host: string): string {
-  return `https://${host}/sub/${token}`;
-}
-
-// ---------------------------------------------------------------------------
-// Build context
-// ---------------------------------------------------------------------------
-
-export interface BuildContext {
-  user: User;
-  settings: PanelSettings;
-  speedPreset: SpeedPreset;
-  fingerprint: Fingerprint;
-  profileMode: ProfileMode;
-  nameTemplate: string;
-  hostForSub: string;
-}
-
-interface RouteNames {
-  names: string[];
-  health: string;
-}
-
-function routeNames(ctx: BuildContext): RouteNames {
-  const names = ctx.user.routes.map((r) =>
-    renderConfigName(ctx.nameTemplate, {
-      brand: ctx.settings.brand,
-      app: APP_NAME,
-      user: ctx.user.name,
-      profile: ctx.profileMode,
-      index: r.index,
-      endpoint: `${r.host}:${r.port}`,
-      port: r.port,
-    }),
-  );
-  return { names, health: healthOrDefault(ctx.settings, ctx.user.routes[0]) };
-}
-
-function buildVlessLines(ctx: BuildContext, speed: SpeedSpec): {
-  lines: string[];
-  names: string[];
-} {
-  const { names } = routeNames(ctx);
-  const lines = ctx.user.routes.map((r, i) =>
-    vlessUriFor(ctx.user, r, {
-      fingerprint: ctx.fingerprint,
-      earlyData: speed.earlyData,
-      name: names[i]!,
-    }),
-  );
-  return { lines, names };
-}
-
-// ---------------------------------------------------------------------------
-// Clash Meta YAML
-// ---------------------------------------------------------------------------
-
-export function buildClashYaml(ctx: BuildContext): string {
-  const speed = SPEED_PRESETS[ctx.speedPreset];
-  const { names, health } = routeNames(ctx);
-  const fp = fingerprintName(ctx.fingerprint);
-  const lines: string[] = [];
-  lines.push(
-    'mixed-port: 7890',
-    'allow-lan: false',
-    'mode: rule',
-    'log-level: info',
-    'ipv6: false',
-    'unified-delay: true',
-    'find-process-mode: off',
-    'cache-file: "nova-cache.db"',
-    'profile:',
-    '  store-selected: true',
-    '  store-fake-ip: false',
-    '',
-    'proxies:',
-  );
-  ctx.user.routes.forEach((r, i) => {
-    lines.push(
-      `  - name: ${yamlStr(names[i]!)}`,
-      '    type: vless',
-      `    server: ${yamlStr(r.host)}`,
-      `    port: ${r.port}`,
-      `    uuid: ${yamlStr(ctx.user.uuid)}`,
-      '    network: ws',
-      '    tls: true',
-      `    servername: ${yamlStr(r.host)}`,
-      '    udp: true',
-      `    client-fingerprint: ${fp}`,
-      '    ws-opts:',
-      `      path: ${yamlStr(r.path)}`,
-      '      headers:',
-      `        Host: ${yamlStr(r.host)}`,
-    );
-    if (speed.tcpConcurrent) lines.push('    tcp-concurrent: true');
-    if (speed.earlyData > 0) {
-      lines.push(`    max-early-data: ${speed.earlyData}`, '    early-data-header-name: Sec-WebSocket-Protocol');
-    }
-    lines.push('');
-  });
-  lines.push(
-    'proxy-groups:',
-    '  - name: NOVA-AUTO',
-    '    type: url-test',
-    `    url: ${yamlStr(health)}`,
-    `    interval: ${speed.healthInterval}`,
-    `    tolerance: ${speed.tolerance}`,
-    `    proxies: ${yamlList(names)}`,
-    '  - name: NOVA-FALLBACK',
-    '    type: fallback',
-    `    url: ${yamlStr(health)}`,
-    `    interval: ${speed.healthInterval}`,
-    `    proxies: ${yamlList(['NOVA-AUTO', ...names])}`,
-    '  - name: NOVA-BALANCE',
-    '    type: load-balance',
-    `    url: ${yamlStr(health)}`,
-    `    interval: ${speed.healthInterval}`,
-    '    strategy: least-ping',
-    `    proxies: ${yamlList(names)}`,
-    '  - name: NOVA-SMART',
-    '    type: select',
-    `    proxies: ${yamlList(['NOVA-AUTO', 'NOVA-FALLBACK', 'NOVA-BALANCE', ...names])}`,
-    '',
-    'rules:',
-    '  - MATCH,NOVA-SMART',
-    '',
-  );
-  return lines.join('\n');
-}
-
-// ---------------------------------------------------------------------------
-// sing-box JSON
-// ---------------------------------------------------------------------------
-
-export function buildSingBoxJson(ctx: BuildContext): string {
-  const speed = SPEED_PRESETS[ctx.speedPreset];
-  const { names } = routeNames(ctx);
-  const fp = fingerprintName(ctx.fingerprint);
-  const outbounds: Record<string, unknown>[] = ctx.user.routes.map((r, i) => ({
-    type: 'vless',
-    tag: names[i]!,
-    server: r.host,
-    server_port: r.port,
-    uuid: ctx.user.uuid,
-    flow: '',
-    tls: {
-      enabled: true,
-      server_name: r.host,
-      insecure: false,
-      utls: { enabled: true, fingerprint: fp === 'random' ? 'random' : fp },
-    },
-    transport: {
-      type: 'ws',
-      path: r.path,
-      headers: { Host: r.host },
-      max_early_data: speed.earlyData,
-      early_data_header_name: 'Sec-WebSocket-Protocol',
-    },
-  }));
-  outbounds.push(
-    {
-      type: 'urltest',
-      tag: 'NOVA-AUTO',
-      outbounds: names,
-      url: healthOrDefault(ctx.settings, ctx.user.routes[0]),
-      interval: `${speed.healthInterval}s`,
-      tolerance: speed.tolerance,
-    },
-    {
-      type: 'selector',
-      tag: 'NOVA-SMART',
-      outbounds: ['NOVA-AUTO', ...names, 'direct'],
-      default: 'NOVA-AUTO',
-    },
-    { type: 'direct', tag: 'direct' },
-    { type: 'block', tag: 'block' },
-  );
-  const dohServers: Array<Record<string, unknown>> = [
-    { tag: 'doh-main', address: ctx.settings.doh || DEFAULT_DOH, detour: 'NOVA-SMART' },
-  ];
-  for (const alt of ctx.settings.dohAlt ?? []) {
-    dohServers.push({ tag: `doh-alt-${dohServers.length}`, address: alt, detour: 'NOVA-SMART' });
-  }
-  const doc: Record<string, unknown> = {
-    log: { level: 'warn', timestamp: true },
-    dns: {
-      servers: dohServers,
-      strategy: 'prefer_ipv4',
-      disable_cache: false,
-    },
-    inbounds: [
-      {
-        type: 'tun',
-        tag: 'tun-in',
-        interface_name: 'NovaTun',
-        address: ['172.19.0.1/30', 'fd00::1/126'],
-        mtu: 1500,
-        auto_route: true,
-        strict_route: true,
-        stack: 'system',
-      },
-      { type: 'mixed', tag: 'mixed-in', listen: '127.0.0.1', listen_port: 2080 },
-    ],
-    outbounds,
-    route: {
-      final: 'NOVA-SMART',
-      rules: [
-        { ip_cidr: PRIVATE_V4_CIDRS, outbound: 'direct' },
-        { ip_cidr: PRIVATE_V6_CIDRS, outbound: 'direct' },
-        { domain_suffix: ['local', 'lan', 'localhost'], outbound: 'direct' },
-      ],
-    },
-  };
-  return JSON.stringify(doc, null, 2);
-}
-
-// ---------------------------------------------------------------------------
-// V2Ray / raw / public entry
-// ---------------------------------------------------------------------------
-
-function buildV2ray(ctx: BuildContext): { b64: string; raw: string } {
-  const speed = SPEED_PRESETS[ctx.speedPreset];
-  const { lines } = buildVlessLines(ctx, speed);
-  return { b64: base64Encode(lines.join('\n')), raw: lines.join('\n') };
-}
-
-export function subPayloads(
-  ctx: BuildContext,
-): Record<'v2ray' | 'raw' | 'clash' | 'singbox', string> {
-  return {
-    v2ray: buildV2ray(ctx).b64,
-    raw: buildV2ray(ctx).raw,
-    clash: buildClashYaml(ctx),
-    singbox: buildSingBoxJson(ctx),
-  };
-}
-
-export function buildFormats(
-  ctx: BuildContext,
-  formats: ConfigFormat[],
-): BuiltConfig[] {
-  const all = subPayloads(ctx);
-  return formats.map((format) => ({
-    format,
-    paths: ctx.user.routes.length,
-    requestedPaths: ctx.user.routes.length,
-    truncated: false,
-    payload: all[format],
-    user: {
-      id: ctx.user.id,
-      name: ctx.user.name,
-      uuid: ctx.user.uuid,
-      token: ctx.user.token,
-      subUrl: subUrlFor(ctx.user.token, ctx.hostForSub),
-      profileMode: ctx.profileMode,
-      speedPreset: ctx.speedPreset,
-      fingerprint: ctx.fingerprint,
-    },
-  }));
-}
-
-export function buildOne(ctx: BuildContext, format: ConfigFormat): BuiltConfig {
-  return buildFormats(ctx, [format])[0]!;
-}
-
-export function healthOrDefault(settings: PanelSettings, firstRoute?: Route): string {
-  return healthUrlFor(settings, firstRoute);
-}
-
-export interface BuiltPayload {
-  format: ConfigFormat;
-  paths: number;
-  requestedPaths: number;
-  truncated: boolean;
-  payload: string;
-  user: {
-    id: string;
-    name: string;
-    uuid: string;
-    token: string;
-    subUrl: string;
-    profileMode: ProfileMode;
-    speedPreset: SpeedPreset;
-    fingerprint: Fingerprint;
-  };
-}
+// --------------------------------------------------------------- session
+export const SESSION = {
+  ttlMs: 7 * 24 * 60 * 60 * 1000,
+  adminTtlMs: 12 * 60 * 60 * 1000,
+  loginLockAfter: 10,
+  loginLockMs: 15 * 60 * 1000,
+  loginDelayMs: 600,
+} as const;

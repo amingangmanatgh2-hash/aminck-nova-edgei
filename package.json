@@ -1,11 +1,14 @@
 {
-  "name": "aminck-nova-edgei",
+  "name": "minecraft-god-server",
   "version": "1.0.0",
   "private": true,
-  "description": "AMINCK Nova Edge (AMINCK GOD Edition) — Persian RTL serverless panel for managing VLESS + WebSocket + TLS subscriptions on Cloudflare Workers. State lives in a single automatic Durable Object (binding AMINCK_STORE) — no D1/KV setup needed.",
+  "description": "Minecraft God Server platform — Cloudflare Workers + D1 + KV + R2 + Durable Objects. Website, shop, OTP auth, admin panel, adaptive AI bots, multi-layer anti-cheat, monitoring.",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:apply:local": "wrangler d1 execute GODDB --local --file=src/db/schema.sql",
+    "db:apply:remote": "wrangler d1 execute GODDB --remote --file=src/db/schema.sql",
     "build": "npm run check",
     "check": "npm run check:ts && npm run check:ui",
     "check:ts": "tsc --noEmit",
@@ -13,8 +16,7 @@
     "build:public": "node scripts/build-public.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "deploy": "wrangler deploy",
-    "cf-typegen": "wrangler types"
+    "sim:anticheat": "vitest run test/anticheat-simulation.test.ts --reporter=verbose"
   },
   "engines": {
     "node": ">=20"
@@ -28,8 +30,5 @@
     "miniflare": "^4.20260730.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
-  },
-  "overrides": {
-    "undici": "7.29.0"
   }
 }

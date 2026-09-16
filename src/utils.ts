@@ -1,9 +1,7 @@
 /**
- * AMINCK Nova Edge — pure helpers (no Cloudflare runtime dependencies,
- * fully unit-testable in Node).
+ * Minecraft God Server — pure helpers. No Cloudflare runtime dependencies so
+ * they unit-test directly in Node.
  */
-import type { Permission } from './types';
-import { ROLE_PERMISSIONS } from './types';
 
 const HEX = '0123456789abcdef';
 
@@ -15,301 +13,199 @@ export function randomHex(bytes: number): string {
   return out;
 }
 
-export function randomToken(bytes = 32): string {
-  return randomHex(bytes);
+export const newId = (): string => randomHex(12);
+export const randomToken = (bytes = 32): string => randomHex(bytes);
+export const now = (): number => Date.now();
+export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+export function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
 }
 
-export function newId(): string {
-  return randomHex(12);
+export function base64Encode(s: string): string {
+  return btoa(unescape(encodeURIComponent(s)));
 }
 
-export function uuid(): string {
-  return crypto.randomUUID();
-}
-
-export function now(): number {
-  return Date.now();
-}
-
-export function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-// ---------------------------------------------------------------------------
-// Encoding
-// ---------------------------------------------------------------------------
-
-export function base64Encode(input: string | Uint8Array): string {
-  const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : input;
-  let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
-  return btoa(bin);
-}
-
-export function base64Decode(input: string): Uint8Array {
-  const cleaned = input.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = cleaned.length % 4 === 0 ? '' : '='.repeat(4 - (cleaned.length % 4));
-  const bin = atob(cleaned + pad);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-export function base64UrlEncode(input: string | Uint8Array): string {
-  return base64Encode(input).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-export function hexToBytes(hex: string): Uint8Array {
-  const out = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  return out;
-}
-
-export function toHex(bytes: Uint8Array): string {
-  let out = '';
-  for (let i = 0; i < bytes.length; i++) out += HEX[bytes[i]! >> 4]! + HEX[bytes[i]! & 15]!;
-  return out;
-}
-
-export function utf8(s: string): Uint8Array {
-  return new TextEncoder().encode(s);
-}
-
-// ---------------------------------------------------------------------------
-// Crypto: HMAC-SHA256 sessions and PBKDF2-SHA256 passwords
-// ---------------------------------------------------------------------------
-
-export async function hmacSha256(key: string, data: string): Promise<string> {
-  const keyBuf = await crypto.subtle.importKey(
+// ------------------------------------------------------------------ crypto
+async function hmacKey(secret: string, usage: string): Promise<CryptoKey> {
+  const enc = new TextEncoder().encode(`${secret}::${usage}`);
+  return crypto.subtle.importKey(
     'raw',
-    utf8(key),
+    enc,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign'],
+    ['sign', 'verify'],
   );
-  const sig = await crypto.subtle.sign('HMAC', keyBuf, utf8(data));
-  return toHex(new Uint8Array(sig));
 }
 
-/** Sign a session id: `id.signature` where signature = HMAC-SHA256(secret, id). */
-export async function signSessionId(secret: string, id: string): Promise<string> {
-  return `${id}.${await hmacSha256(secret, id)}`;
+function b64url(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/** Verify + parse a signed session cookie. Returns the session id or null. */
-export async function verifySessionId(
+/** Deterministic HMAC tag. Used for session ids and phone hashing. */
+export async function sign(value: string, secret: string, usage: string): Promise<string> {
+  const key = await hmacKey(secret, usage);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value));
+  return b64url(sig);
+}
+
+export async function verify(
+  value: string,
+  tag: string,
   secret: string,
-  cookieValue: string | null | undefined,
-): Promise<string | null> {
-  if (!cookieValue) return null;
-  const dot = cookieValue.lastIndexOf('.');
-  if (dot <= 0) return null;
-  const id = cookieValue.slice(0, dot);
-  const sig = cookieValue.slice(dot + 1);
-  const expected = await hmacSha256(secret, id);
-  if (expected.length !== sig.length) return null;
-  let diff = 0;
-  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
-  return diff === 0 ? id : null;
-}
-
-export const PBKDF2_ITERATIONS = 210_000;
-
-export interface PasswordHash {
-  salt: string;
-  hash: string;
-  iterations: number;
-}
-
-/** PBKDF2-SHA256 with a random 16-byte salt. Returns hex values for storage. */
-export async function hashPassword(
-  password: string,
-  iterations = PBKDF2_ITERATIONS,
-): Promise<PasswordHash> {
-  const salt = randomHex(16);
-  const key = await derivePbkdf2(password, salt, iterations, 32);
-  return { salt, hash: toHex(key), iterations };
-}
-
-export async function verifyPassword(
-  password: string,
-  stored: PasswordHash,
+  usage: string,
 ): Promise<boolean> {
-  if (!password || !stored.hash) return false;
-  const key = await derivePbkdf2(password, stored.salt, stored.iterations, 32);
-  const candidate = toHex(key);
-  if (candidate.length !== stored.hash.length) return false;
+  const expected = await sign(value, secret, usage);
+  return timingSafeEqual(expected, tag);
+}
+
+/** Never store raw phone numbers in logs / analytics. */
+export const hashPhone = (phone: string, secret: string): Promise<string> =>
+  sign(normalizePhone(phone), secret, 'phone');
+
+export const hashIp = (ip: string, secret: string): Promise<string> =>
+  sign(ip, secret, 'ip');
+
+export function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
   let diff = 0;
-  for (let i = 0; i < candidate.length; i++) diff |= candidate.charCodeAt(i) ^ stored.hash.charCodeAt(i);
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
 
-async function derivePbkdf2(
-  password: string,
-  saltHex: string,
-  iterations: number,
-  length: number,
-): Promise<Uint8Array> {
-  const keyMaterial = await crypto.subtle.importKey(
+export interface HashedPassword {
+  hash: string;
+  salt: string;
+  iterations: number;
+}
+
+const PBKDF2_ITERATIONS = 210_000;
+
+export async function hashPassword(pw: string, salt = randomHex(16)): Promise<HashedPassword> {
+  const key = await crypto.subtle.importKey(
     'raw',
-    utf8(password),
+    new TextEncoder().encode(pw),
     'PBKDF2',
     false,
     ['deriveBits'],
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: hexToBytes(saltHex), iterations, hash: 'SHA-256' },
-    keyMaterial,
-    length * 8,
+    { name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: PBKDF2_ITERATIONS },
+    key,
+    256,
   );
-  return new Uint8Array(bits);
+  return { hash: b64url(bits), salt, iterations: PBKDF2_ITERATIONS };
 }
 
-/** SHA-256 of a string (diagnostics only, not security critical). */
-export async function sha256Hex(data: string): Promise<string> {
-  return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', utf8(data))));
+export async function verifyPassword(pw: string, h: HashedPassword): Promise<boolean> {
+  const check = await hashPassword(pw, h.salt);
+  return timingSafeEqual(check.hash, h.hash);
 }
 
-// ---------------------------------------------------------------------------
-// IP handling: literal blocking of private / reserved destinations
-// ---------------------------------------------------------------------------
+export async function sha256Hex(data: ArrayBuffer | Uint8Array): Promise<string> {
+  const buf = data instanceof Uint8Array ? (data.buffer as ArrayBuffer) : data;
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => HEX[b >> 4]! + HEX[b & 15]!)
+    .join('');
+}
 
-function ipv4ToInt(ip: string): number | null {
-  const parts = ip.split('.');
-  if (parts.length !== 4) return null;
-  let acc = 0;
-  for (const p of parts) {
-    if (!/^\d{1,3}$/.test(p)) return null;
-    const n = Number(p);
-    if (n > 255) return null;
-    acc = acc * 256 + n;
+// -------------------------------------------------------------- phone / IP
+/** Accepts Iranian and international formats, normalises to E.164. */
+export function normalizePhone(input: string): string {
+  // Convert Persian/Arabic digits FIRST. The strip below removes anything that
+  // is not an ASCII digit, so doing this after would silently delete them.
+  let s = String(input)
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+
+  s = s.replace(/[^\d+]/g, '');
+  if (s.startsWith('00')) s = '+' + s.slice(2);
+
+  if (s.startsWith('09') && s.length === 11) {
+    // Local trunk form: 09123456789 -> drop only the leading trunk zero.
+    s = '+98' + s.slice(1);
+  } else if (/^9\d{9}$/.test(s)) {
+    // Bare 10-digit mobile form: 9123456789
+    s = '+98' + s;
+  } else if (s.startsWith('98') && s.length === 12) {
+    s = '+' + s;
   }
-  return acc >>> 0;
-}
-
-function isPrivateV4(ip: string): boolean {
-  const int = ipv4ToInt(ip);
-  if (int === null) return false;
-  const ranges: Array<[number, number]> = [
-    [0x00000000, 8], // 0.0.0.0/8
-    [0x0a000000, 8], // 10.0.0.0/8
-    [0x7f000000, 8], // 127.0.0.0/8
-    [0x64400000, 10], // 100.64.0.0/10 (CGNAT)
-    [0xa9fe0000, 16], // 169.254.0.0/16
-    [0xac100000, 12], // 172.16.0.0/12
-    [0xc0a80000, 16], // 192.168.0.0/16
-    [0xc0000000, 24], // 192.0.0.0/24
-    [0xc0000200, 24], // 192.0.2.0/24 TEST-NET-1
-    [0xc6120000, 15], // 198.18.0.0/15 benchmarking
-    [0xc6336400, 24], // 198.51.100.0/24 TEST-NET-2
-    [0xcb007100, 24], // 203.0.113.0/24 TEST-NET-3
-    [0xe0000000, 4], // 224.0.0.0/4 multicast (not routable)
-    [0xf0000000, 4], // 240.0.0.0/4 reserved
-  ];
-  for (const [prefix, bits] of ranges) {
-    const mask = 0xffffffff << (32 - bits);
-    if (((int & mask) >>> 0) === ((prefix & mask) >>> 0)) return true;
-  }
-  return false;
-}
-
-function isPrivateV6(ip: string): boolean {
-  const lower = ip.toLowerCase();
-  if (lower === '::' || lower === '::1') return true;
-  if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // fc00::/7 ULA
-  if (lower.startsWith('fe8') || lower.startsWith('fe9') || lower.startsWith('fea') || lower.startsWith('feb')) return true; // fe80::/10
-  if (lower.startsWith('ff')) return true; // multicast
-  if (lower === '::ffff:127.0.0.1') return true;
-  const m = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (m) return isPrivateV4(m[1]!);
-  if (lower.startsWith('2001:db8')) return true; // documentation
-  if (lower.startsWith('2001:10') || lower.startsWith('2001:20')) return true; // ORCHID
-  return false;
-}
-
-/** True when `literal` is a private / reserved / non-routable IP literal. */
-export function isPrivateLiteral(literal: string): boolean {
-  const trimmed = literal.trim();
-  if (trimmed.includes(':')) return isPrivateV6(trimmed);
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(trimmed)) return isPrivateV4(trimmed);
-  return false;
-}
-
-/** Ports that are always rejected because they serve SMTP. */
-export const BLOCKED_SMTP_PORTS = [25, 465, 587, 2525];
-
-export function isSmtpPort(port: number): boolean {
-  return BLOCKED_SMTP_PORTS.includes(port);
-}
-
-// ---------------------------------------------------------------------------
-// Misc helpers
-// ---------------------------------------------------------------------------
-
-export function clamp(n: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, n));
-}
-
-export function isUnlimited(value: number): boolean {
-  return value === 0;
-}
-
-export function formatBytes(bytes: number): string {
-  if (!bytes || bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-  let v = bytes;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)} ${units[i]}`;
-}
-
-export function formatDuration(seconds: number): string {
-  if (!seconds || seconds <= 0) return '∞';
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  if (d > 0) return `${d} روز`;
-  if (h > 0) return `${h} ساعت`;
-  const m = Math.floor((seconds % 3600) / 60);
-  return m > 0 ? `${m} دقیقه` : `${Math.floor(seconds)} ثانیه`;
-}
-
-const ROLE_PERMS: Record<'owner' | 'admin' | 'operator' | 'support', Permission[]> = {
-  owner: [
-    'users:view',
-    'users:create',
-    'users:edit',
-    'users:delete',
-    'configs:build',
-    'settings:manage',
-    'endpoints:probe',
-    'backup:export',
-    'admins:manage',
-    'audit:view',
-  ],
-  admin: ROLE_PERMISSIONS.admin,
-  operator: ROLE_PERMISSIONS.operator,
-  support: ROLE_PERMISSIONS.support,
-};
-
-const permCache = new Map<string, Set<Permission>>();
-
-export function permissionSet(
-  role: 'owner' | 'admin' | 'operator' | 'support',
-): Set<Permission> {
-  let s = permCache.get(role);
-  if (!s) {
-    s = new Set<Permission>(ROLE_PERMS[role]);
-    permCache.set(role, s);
-  }
+  if (!s.startsWith('+')) s = '+' + s;
   return s;
 }
 
-export function hasPermission(
-  role: 'owner' | 'admin' | 'operator' | 'support',
-  permission: Permission,
-): boolean {
-  return permissionSet(role).has(permission);
+export function isValidIranPhone(e164: string): boolean {
+  return /^\+989\d{9}$/.test(e164);
+}
+
+const PRIVATE_V4 = [
+  /^10\./,
+  /^127\./,
+  /^169\.254\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./, // CGNAT — very common in Iran
+  /^0\./,
+];
+
+export function isPrivateIp(ip: string): boolean {
+  if (!ip) return true;
+  const v = ip.replace(/^\[|\]$/g, '').split('%')[0]!;
+  if (v.includes(':')) return v === '::1' || v.toLowerCase().startsWith('fe80') || v === '::';
+  return PRIVATE_V4.some((re) => re.test(v));
+}
+
+// --------------------------------------------------------------- numbers
+/** ELO update with a K-factor that shrinks as players settle. */
+export function eloDelta(rating: number, opponent: number, won: boolean, games = 10): number {
+  const k = games < 10 ? 40 : games < 50 ? 28 : 20;
+  const expected = 1 / (1 + Math.pow(10, (opponent - rating) / 400));
+  const actual = won ? 1 : 0;
+  return Math.round(k * (actual - expected));
+}
+
+export function median(xs: number[]): number {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
+}
+
+export function mean(xs: number[]): number {
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
+}
+
+export function stddev(xs: number[]): number {
+  if (xs.length < 2) return 0;
+  const m = mean(xs);
+  return Math.sqrt(mean(xs.map((x) => (x - m) ** 2)));
+}
+
+/** Coefficient of variation — the autoclicker regularity signal. */
+export function coefficientOfVariation(xs: number[]): number {
+  const m = mean(xs);
+  return m === 0 ? 0 : stddev(xs) / m;
+}
+
+// ------------------------------------------------------------ validation
+export function sanitizeText(s: unknown, max = 200): string {
+  if (typeof s !== 'string') return '';
+  return s
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .slice(0, max)
+    .trim();
+}
+
+/** Minecraft usernames: 3-16 chars, A-Z a-z 0-9 _ (Java) — Bedrock allows spaces. */
+export function isValidMcName(name: string, edition: 'java' | 'bedrock' = 'java'): boolean {
+  if (edition === 'bedrock') return /^[\w .]{3,20}$/.test(name);
+  return /^[A-Za-z0-9_]{3,16}$/.test(name);
+}
+
+export function isUuidLike(s: string): boolean {
+  return /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(s);
 }

@@ -1,48 +1,64 @@
-#!/usr/bin/env node
 /**
- * AMINCK Nova Edge — generate the `public/` static assets directory.
+ * Generates public/ from the TypeScript UI modules.
  *
- * The panel UI lives as strings inside src/ui.ts (single source of truth).
- * This script compiles src/ui.ts with esbuild and writes the *evaluated*
- * constants to real files (public/index.html, public/app.js, public/app.css)
- * so they are byte-identical to what the Worker serves as a fallback.
+ * The UI lives in TS so it is type-checked and sits next to the code that
+ * serves it; public/ is a build artifact, and test/artifacts.test.ts fails the
+ * build if the two drift apart.
  *
- * Why this matters for deploys:
- *   - the official Cloudflare "Deploy to Workers" pipeline refuses to build a
- *     project when it cannot detect a static-files directory; public/ fixes
- *     that, and
- *   - `wrangler deploy` uploads the panel as Workers Static Assets served
- *     through the Worker (run_worker_first) with the security headers.
+ * Uses esbuild's JS API rather than shelling out to the binary, which avoids
+ * platform-binary path problems across operating systems.
  */
-import { build } from 'esbuild';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { build } from 'esbuild';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const buildDir = join(root, '.nova-build');
-mkdirSync(buildDir, { recursive: true });
-const outfile = join(buildDir, 'ui.mjs');
+const outDir = join(root, 'public');
+const tmp = join(root, '.nova-build');
+mkdirSync(outDir, { recursive: true });
+mkdirSync(tmp, { recursive: true });
 
-try {
-  await build({
-    entryPoints: [join(root, 'src', 'ui.ts')],
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    target: 'es2022',
-    outfile,
-    logLevel: 'error',
-  });
-  const mod = await import(`${pathToFileURL(outfile).href}?v=${Date.now()}`);
-  const out = join(root, 'public');
-  mkdirSync(out, { recursive: true });
-  writeFileSync(join(out, 'app.js'), mod.UI_APP_JS, 'utf8');
-  writeFileSync(join(out, 'app.css'), mod.UI_APP_CSS, 'utf8');
-  writeFileSync(join(out, 'index.html'), mod.uiShell('AMINCK Nova Edge'), 'utf8');
-  console.log(
-    `build-public: OK — app.js (${Buffer.byteLength(mod.UI_APP_JS)} B), app.css (${Buffer.byteLength(mod.UI_APP_CSS)} B), index.html (${Buffer.byteLength(mod.uiShell('AMINCK Nova Edge'))} B)`,
-  );
-} finally {
-  rmSync(buildDir, { recursive: true, force: true });
+// One entry that imports the UI strings and writes them out. Bundling it for
+// node means the TS is compiled and executed in a single step.
+const entry = join(tmp, 'emit.mjs');
+writeFileSync(
+  entry,
+  `import { writeFileSync } from 'node:fs';
+import { CSS } from ${JSON.stringify(join(root, 'src/ui/styles.ts'))};
+import { SITE_JS } from ${JSON.stringify(join(root, 'src/ui/site.ts'))};
+import { ADMIN_JS } from ${JSON.stringify(join(root, 'src/ui/admin.ts'))};
+const out = ${JSON.stringify(outDir)};
+writeFileSync(out + '/app.css', CSS, 'utf8');
+writeFileSync(out + '/app.js', SITE_JS, 'utf8');
+writeFileSync(out + '/admin.js', ADMIN_JS, 'utf8');
+`,
+  'utf8',
+);
+
+const result = await build({
+  entryPoints: [entry],
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node20',
+  outfile: join(tmp, 'emit.bundle.mjs'),
+  write: true,
+});
+if (result.errors.length) {
+  console.error(result.errors);
+  process.exit(1);
 }
+
+await import(`file://${join(tmp, 'emit.bundle.mjs')}`);
+
+// Validate the generated browser JS actually parses.
+for (const f of ['app.js', 'admin.js']) {
+  execFileSync(process.execPath, ['--check', join(outDir, f)], { stdio: 'pipe' });
+}
+
+const sizes = ['app.css', 'app.js', 'admin.js']
+  .map((f) => `${f} ${readFileSync(join(outDir, f)).length}B`)
+  .join(', ');
+console.log(`build-public: wrote ${sizes}`);

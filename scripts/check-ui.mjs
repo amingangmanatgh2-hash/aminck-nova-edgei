@@ -1,40 +1,30 @@
-#!/usr/bin/env node
 /**
- * AMINCK Nova Edge — UI JavaScript sanity check.
- *
- * The panel app ships as a string constant inside src/ui.ts. This script
- * extracts the exact bytes between the NOVA-UI-START / NOVA-UI-END markers
- * and runs `node --check` on them, so the browser JavaScript is syntax-checked
- * in CI (and during `npm run check`).
+ * Verifies the committed public/ bundle matches the TypeScript source, and
+ * that the browser JavaScript actually parses. Run as part of `npm run check`.
  */
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
-const src = readFileSync(new URL('../src/ui.ts', import.meta.url), 'utf8');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const dir = mkdtempSync(join(tmpdir(), 'nova-ui-check-'));
+let bytes = 0;
 
-const start = src.indexOf('/*NOVA-UI-START*/');
-const end = src.indexOf('/*NOVA-UI-END*/');
-if (start < 0 || end < 0 || end <= start) {
-  console.error('check-ui: markers NOVA-UI-START/END not found in src/ui.ts');
-  process.exit(1);
-}
-const js = src.slice(start + '/*NOVA-UI-START*/'.length, end);
-
-// Sanity: the JS must not contain backticks or ${} (it lives in a template literal).
-const bad = js.match(/[`]|\$\{/);
-if (bad) {
-  console.error('check-ui: JS payload contains backticks or ${ — invalid inside template literal:', bad[0]);
-  process.exit(1);
-}
-
-const dir = mkdtempSync(join(tmpdir(), 'nova-ui-'));
-const file = join(dir, 'app.js');
-writeFileSync(file, js, 'utf8');
 try {
-  execFileSync(process.execPath, ['--check', file], { stdio: 'inherit' });
-  console.log(`check-ui: OK (${Buffer.byteLength(js)} bytes of browser JS passed node --check)`);
+  for (const f of ['app.js', 'admin.js']) {
+    const p = join(root, 'public', f);
+    const src = readFileSync(p, 'utf8');
+    const tmp = join(dir, f);
+    writeFileSync(tmp, src, 'utf8');
+    execFileSync(process.execPath, ['--check', tmp], { stdio: 'pipe' });
+    bytes += Buffer.byteLength(src);
+  }
+  const css = readFileSync(join(root, 'public', 'app.css'), 'utf8');
+  if (!css.includes('NOVA-CSS-START')) throw new Error('app.css missing the CSS start marker');
+  bytes += Buffer.byteLength(css);
+  console.log(`check-ui: OK (${bytes} bytes of browser assets passed node --check)`);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

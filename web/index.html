@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="referrer" content="no-referrer">
+<title>Nova Termux — دستیار آفلاین</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🛰</text></svg>">
+</head>
+<body>
+
+<header class="top">
+  <span style="font-size:1.3rem">🛰</span>
+  <h1>Nova Termux</h1>
+  <span id="pill-gps" class="pill">جی‌پی‌اس …</span>
+  <span id="pill-places" class="pill">مکان: …</span>
+  <span class="pill ok" title="هیچ درخواستی به بیرون نمی‌رود">آفلاین</span>
+</header>
+
+<main>
+
+  <!-- ======================================================= دستیار -->
+  <section id="tab-assistant" class="tab active">
+    <div class="card">
+      <div class="spread">
+        <h2>💬 دستیار</h2>
+        <button class="small" id="btn-help">راهنما</button>
+      </div>
+      <div class="muted small">
+        کاملاً آفلاین. چیزی را که نمی‌داند نمی‌سازد؛ می‌گوید «نمی‌دانم».
+      </div>
+    </div>
+
+    <div class="chips" id="quick-chips"></div>
+
+    <div id="chat-log" class="card" style="min-height:44vh"></div>
+
+    <div class="composer">
+      <input id="chat-input" type="text" autocomplete="off"
+             placeholder="مثلاً: اینجا رو سیو کن به اسم خونه">
+      <button class="primary" id="btn-send">ارسال</button>
+    </div>
+  </section>
+
+  <!-- ========================================================= مکان‌ها -->
+  <section id="tab-places" class="tab">
+    <div class="card">
+      <div class="spread">
+        <h2>📌 مکان‌های ذخیره‌شده</h2>
+        <button class="primary small" id="btn-save-here">+ سیوِ همین‌جا</button>
+      </div>
+      <div class="muted small">
+        یک بار جایی که هستی را با اسم ذخیره کن؛ بعد فقط بگو «برم …».
+      </div>
+    </div>
+
+    <div class="card" id="save-box" style="display:none">
+      <h2>ذخیره‌ی مکان فعلی</h2>
+      <div class="row" style="margin-bottom:8px">
+        <input id="save-name" type="text" placeholder="اسم مکان، مثلاً خونه">
+        <button class="primary" id="btn-save-confirm">ذخیره</button>
+        <button id="btn-save-cancel">بی‌خیال</button>
+      </div>
+      <div id="save-fix" class="muted small"></div>
+    </div>
+
+    <div class="card">
+      <table class="grid" id="places-table">
+        <thead><tr><th>نام</th><th>مختصات</th><th>دفعات</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="places-empty" class="muted small" style="display:none">
+        هنوز مکانی ذخیره نشده.
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================= موقعیت -->
+  <section id="tab-location" class="tab">
+    <div class="card">
+      <div class="spread">
+        <h2>📍 موقعیت فعلی</h2>
+        <button class="small" id="btn-refresh-fix">به‌روزرسانی</button>
+      </div>
+      <div id="fix-body" class="muted">در حال گرفتن موقعیت…</div>
+      <div class="row" style="margin-top:10px">
+        <button class="small" id="btn-watch">پایش زنده</button>
+        <button class="small" id="btn-nearest">نزدیک‌ترین مکان</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>⌨️ وارد کردن دستی مختصات</h2>
+      <div class="muted small">اگر جی‌پی‌اس نداری، خودت مختصات را بده.</div>
+      <div class="row" style="margin-top:8px">
+        <input id="manual-lat" type="number" step="0.000001" placeholder="عرض جغرافیایی، مثلاً 35.6997">
+        <input id="manual-lon" type="number" step="0.000001" placeholder="طول جغرافیایی، مثلاً 51.3379">
+        <button id="btn-manual">ثبت</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🛰 وضعیت Termux:API</h2>
+      <pre class="mono-block" id="gps-status">—</pre>
+    </div>
+  </section>
+
+  <!-- ======================================================= فروشگاه -->
+  <section id="tab-shop" class="tab">
+    <div class="card">
+      <h2>🛒 کاتالوگ</h2>
+      <div class="muted small">
+        از <span class="mono">data/catalog.json</span> خوانده می‌شود — همان کاتالوگی که
+        کد تایپ‌اسکریپت تولید کرده. قیمت به دلار.
+      </div>
+    </div>
+    <div id="shop-groups"></div>
+  </section>
+
+  <!-- ======================================================== فایل‌ها -->
+  <section id="tab-files" class="tab">
+    <div class="card">
+      <div class="spread">
+        <h2>📁 پوشه‌ی پروژه</h2>
+        <button class="small" id="btn-files-up">بالاتر</button>
+      </div>
+      <div class="muted small"><span class="mono" id="files-path">/</span></div>
+      <div id="files-list" style="margin-top:8px"></div>
+      <div class="row" style="margin-top:12px">
+        <a class="btn small" href="/fs/" target="_blank" rel="noopener">نمایش کامل در مرورگر</a>
+        <a class="btn small" href="/docs/" target="_blank" rel="noopener">مستندات</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<nav class="tabs">
+  <button data-tab="assistant" class="active"><span class="ico">💬</span>دستیار</button>
+  <button data-tab="places"><span class="ico">📌</span>مکان‌ها</button>
+  <button data-tab="location"><span class="ico">📍</span>موقعیت</button>
+  <button data-tab="shop"><span class="ico">🛒</span>فروشگاه</button>
+  <button data-tab="files"><span class="ico">📁</span>فایل‌ها</button>
+</nav>
+
+<div id="toast" class="toast"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

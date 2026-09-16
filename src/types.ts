@@ -1,407 +1,281 @@
 /**
- * AMINCK Nova Edge — shared domain types.
- * The whole panel, proxy and config builder operate on these contracts.
+ * Minecraft God Server — shared domain types.
+ * Everything (API, shop, anti-cheat, bots, panel) speaks these contracts.
  */
 
-// ---------------------------------------------------------------------------
-// Roles & power levels
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------ ranks
+export type RankId = 'free' | 'noob' | 'normal' | 'pro' | 'god' | 'ultragod';
 
-export type AdminRole = 'owner' | 'admin' | 'operator' | 'support';
-
-export type Permission =
-  | 'users:view'
-  | 'users:create'
-  | 'users:edit'
-  | 'users:delete'
-  | 'configs:build'
-  | 'settings:manage'
-  | 'endpoints:probe'
-  | 'backup:export'
-  | 'admins:manage'
-  | 'audit:view';
-
-export type PowerLevel = 'limited' | 'normal' | 'strong' | 'ultra';
-
-export interface PowerSpec {
-  /** Official label shown in the UI. */
-  label: string;
-  /** Hard backend cap for the number of routes/paths a config may contain. */
+export interface RankSpec {
+  id: RankId;
+  labelFa: string;
+  labelEn: string;
+  tier: number;
+  tag: string;
+  colour: string;
+  /** USD price in cents. null => earnable only, not purchasable. */
+  priceUsd: number | null;
+  /** XP needed to auto-promote into this rank. */
+  xpThreshold: number;
+  /** Hard backend cap on config paths / concurrent perks. */
   maxPaths: number;
+  permissions: string[];
+  perks: string[];
 }
 
-export const POWER_LEVELS: Record<PowerLevel, PowerSpec> = {
-  limited: { label: 'Limited', maxPaths: 5 },
-  normal: { label: 'Normal', maxPaths: 30 },
-  strong: { label: 'Strong', maxPaths: 80 },
-  ultra: { label: 'Ultra', maxPaths: 200 },
-};
+// ---------------------------------------------------------------- servers
+export type ServerStatus =
+  | 'online'
+  | 'starting'
+  | 'stopping'
+  | 'offline'
+  | 'error'
+  | 'recovering';
 
-/** Maximum number of endpoints the scanner/settings accept. */
-export const MAX_ENDPOINTS = 50;
-/** Maximum number of paths a user subscription may hold. */
-export const MAX_PATHS = 200;
-/** Minimum accepted admin password length. */
-export const MIN_PASSWORD_LENGTH = 10;
-/** Hard minimum for password-protected accounts. */
-export const MAX_AUDIT_EVENTS = 1000;
+export type Edition = 'java' | 'bedrock' | 'both';
+export type Runtime = 'paper' | 'purpur' | 'pocketmine' | 'nukkit';
 
-// ---------------------------------------------------------------------------
-// Speed presets (all values are real knobs honoured by the generated configs)
-// ---------------------------------------------------------------------------
-
-export type SpeedPreset = 'stable' | 'balanced' | 'turbo' | 'god';
-
-export interface SpeedSpec {
-  label: string;
-  /** Early Data size advertised to clients (bytes). */
-  earlyData: number;
-  /** Number of TCP connect attempts before giving up on a target. */
-  tcpRetries: number;
-  /** Clash health-check interval (seconds). */
-  healthInterval: number;
-  /** Clash url-test latency tolerance (ms). */
-  tolerance: number;
-  /** Whether generated Clash proxies use tcp-concurrent. */
-  tcpConcurrent: boolean;
-  /** Whether DNS-over-HTTPS failover across resolvers is enabled. */
-  dnsFailover: boolean;
-  /** probe timeout (ms) used by the scanner for this preset. */
-  probeTimeoutMs: number;
-  /** Bad-path detection: how many consecutive failures make a route "down". */
-  downAfterFails: number;
-}
-
-export const SPEED_PRESETS: Record<SpeedPreset, SpeedSpec> = {
-  stable: {
-    label: 'Stable',
-    earlyData: 1024,
-    tcpRetries: 1,
-    healthInterval: 120,
-    tolerance: 250,
-    tcpConcurrent: false,
-    dnsFailover: false,
-    probeTimeoutMs: 10000,
-    downAfterFails: 3,
-  },
-  balanced: {
-    label: 'Balanced',
-    earlyData: 2048,
-    tcpRetries: 2,
-    healthInterval: 90,
-    tolerance: 150,
-    tcpConcurrent: false,
-    dnsFailover: true,
-    probeTimeoutMs: 8000,
-    downAfterFails: 2,
-  },
-  turbo: {
-    label: 'Turbo',
-    earlyData: 3072,
-    tcpRetries: 3,
-    healthInterval: 60,
-    tolerance: 100,
-    tcpConcurrent: true,
-    dnsFailover: true,
-    probeTimeoutMs: 6000,
-    downAfterFails: 2,
-  },
-  god: {
-    label: 'GOD',
-    earlyData: 4096,
-    tcpRetries: 3,
-    healthInterval: 45,
-    tolerance: 75,
-    tcpConcurrent: true,
-    dnsFailover: true,
-    probeTimeoutMs: 5000,
-    downAfterFails: 1,
-  },
-};
-
-// ---------------------------------------------------------------------------
-// Profiles / endpoint management
-// ---------------------------------------------------------------------------
-
-/** Mechanism a subscription prefers when grouping multiple routes. */
-export type ProfileMode = 'auto' | 'fallback' | 'balance';
-
-export type Fingerprint = 'chrome' | 'firefox' | 'safari' | 'edge' | 'random';
-
-export const FINGERPRINTS: Fingerprint[] = ['chrome', 'firefox', 'safari', 'edge', 'random'];
-
-/** TLS ports Cloudflare accepts for HTTPS traffic (plus 8443 for Enterprise). */
-export const CLOUDFLARE_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
-
-export interface Endpoint {
-  id: string;
-  label: string;
-  host: string;
-  port: number;
-  /** Injected later, never from a client. */
-  createdAt?: number;
-}
-
-export interface ProbeResult {
-  endpointId: string;
-  ok: boolean;
-  /** TCP connect + TLS handshake time measured from the Cloudflare edge, ms. */
-  latencyMs: number | null;
-  error?: string;
-  checkedAt: number;
-}
-
-// ---------------------------------------------------------------------------
-// Settings
-// ---------------------------------------------------------------------------
-
-export interface PanelSettings {
-  /** Panel title shown in the header / browser tab. */
-  title: string;
-  /** Brand shown in the dashboard, subscription names and default config name. */
-  brand: string;
-  /** Support link shown in the panel and subscription headers. */
-  supportUrl: string;
-  /** Primary DNS-over-HTTPS resolver for target resolution + UDP DNS. */
-  doh: string;
-  /** Alternative DoH resolvers, used in order when the primary fails. */
-  dohAlt: string[];
-  /** Health-check URL emitted into Clash/sing-box configs. Empty = derive from first endpoint. */
-  healthUrl: string;
-  /** Config name template supporting {brand} {app} {user} {profile} {index} {endpoint} {port}. */
-  configNameTemplate: string;
-  /** Default number of paths for new users / auto builds. */
-  defaultPaths: number;
-  /** Subscription update interval in hours (profile-update-interval header). */
-  updateIntervalHours: number;
-  /** TLS fingerprint advertised in generated configs. */
-  fingerprint: Fingerprint;
-  /** Default profile mode for new users. */
-  profileMode: ProfileMode;
-  /** Default speed preset for new users. */
-  speedPreset: SpeedPreset;
-  /** Allowed outbound TLS ports. */
-  tlsPorts: number[];
-  /** Endpoints known to this deployment (max MAX_ENDPOINTS). */
-  endpoints: Endpoint[];
-  /** Probe results keyed by endpoint id (scanner page). */
-  probeResults: Record<string, ProbeResult>;
-  /** Last time the automatic 30-minute cron probe ran. */
-  lastProbeAt: number;
-}
-
-// ---------------------------------------------------------------------------
-// Routes & users
-// ---------------------------------------------------------------------------
-
-export interface Route {
-  /** URL path segment the client connects to (e.g. `/k7q2...-<uuid>`). */
-  path: string;
-  /** Endpoint id this route belongs to. */
-  endpointId: string;
-  host: string;
-  port: number;
-  /** Route order inside the subscription (1-based). */
-  index: number;
-  /** Precomputed TLS SNI = the public host the client really reached. */
-  sni?: string;
-}
-
-export interface User {
+export interface ServerRecord {
   id: string;
   name: string;
-  /** VLESS UUID — auth material for the proxy, independent from the token. */
-  uuid: string;
-  /** Subscription token — only used to fetch /sub/ endpoints. */
-  token: string;
-  routes: Route[];
-  /** 0 = unlimited. NEVER coerced to a default. */
-  limitBytes: number;
-  /** 0 = unlimited. */
-  limitSeconds: number;
-  /** 0 = unlimited. */
-  maxConnections: number;
-  active: boolean;
-  speedPreset: SpeedPreset;
-  profileMode: ProfileMode;
-  fingerprint?: Fingerprint | null;
-  /** Per-user config name template; falls back to settings.configNameTemplate. */
-  configNameTemplate?: string | null;
-  /** Internal note, only visible to admins. */
-  note: string;
-  createdAt: number;
-  expiresAt: number; // timestamp; 0 = never
-  /** Approximate total traffic (bytes) consumed through the proxy. */
-  usageBytes: number;
-  lastSeenAt: number;
-  lastSubAt: number;
+  host: string;
+  javaPort: number;
+  bedrockPort: number | null;
+  bedrockEnabled: boolean;
+  edition: Edition;
+  runtime: Runtime;
+  maxPlayers: number;
+  viewDistance: number;
+  simDistance: number;
+  status: ServerStatus;
+  onlinePlayers: number;
+  tps: number | null;
+  memUsedMb: number | null;
+  memMaxMb: number | null;
+  cpuPercent: number | null;
+  lastHeartbeat: number | null;
+  lockOwner: string | null;
+  version: string | null;
+  motd: string | null;
 }
 
-// ---------------------------------------------------------------------------
-// Admins
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------- products
+export type ProductKind = 'rank' | 'cosmetic' | 'bundle' | 'config' | 'booster';
 
-export const ROLE_PERMISSIONS: Record<Exclude<AdminRole, 'owner'>, Permission[]> = {
-  admin: [
-    'users:view',
-    'users:create',
-    'users:edit',
-    'users:delete',
-    'configs:build',
-    'endpoints:probe',
-    'backup:export',
-    'audit:view',
-  ],
-  operator: [
-    'users:view',
-    'users:create',
-    'users:edit',
-    'configs:build',
-    'endpoints:probe',
-    'backup:export',
-    'audit:view',
-  ],
-  support: ['users:view', 'configs:build', 'audit:view'],
-};
-
-/**
- * Every permission, both for the actor check and for the capability manifest.
- */
-export const ALL_PERMISSIONS: Permission[] = [
-  'users:view',
-  'users:create',
-  'users:edit',
-  'users:delete',
-  'configs:build',
-  'settings:manage',
-  'endpoints:probe',
-  'backup:export',
-  'admins:manage',
-  'audit:view',
-];
-
-export interface Admin {
+export interface Product {
   id: string;
-  username: string;
-  role: AdminRole;
-  power: PowerLevel;
+  kind: ProductKind;
+  sku: string;
+  titleFa: string;
+  titleEn: string;
+  description: string | null;
+  /** Cents actually charged (after discount). */
+  priceUsd: number;
+  /** Cents before discount, so the UI can show the struck-through price. */
+  baseUsd: number;
+  imageKey: string | null;
+  meta: Record<string, unknown>;
   active: boolean;
-  /** PBKDF2-SHA256 parameters. NEVER exposed through the API. */
-  salt: string;
-  hash: string;
-  iterations: number;
-  createdAt: number;
-  lastLoginAt: number | null;
+  /** Almost always false: products are hidden until OTP verification. */
+  visibleBeforeAuth: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Sessions
-// ---------------------------------------------------------------------------
+export type OrderStatus =
+  | 'pending'
+  | 'awaiting_receipt'
+  | 'reviewing'
+  | 'paid'
+  | 'rejected'
+  | 'refunded'
+  | 'expired';
 
-export interface Session {
+export type PaymentMethod = 'zarinpal' | 'card2card' | 'free';
+
+export interface Order {
   id: string;
-  adminId: string;
+  userId: string | null;
+  productId: string | null;
+  amountUsd: number;
+  discountPct: number;
+  currency: string;
+  method: PaymentMethod;
+  gatewayRef: string | null;
+  status: OrderStatus;
+  createdAt: number;
+  paidAt: number | null;
+  expiresAt: number | null;
+}
+
+// ------------------------------------------------------------- anti-cheat
+export type CheatCheckId =
+  | 'killaura'
+  | 'fly'
+  | 'speed'
+  | 'noclip'
+  | 'reach'
+  | 'autoclick'
+  | 'xray'
+  | 'fastbreak'
+  | 'collusion'
+  | 'jetpack'
+  | 'timer';
+
+export interface CheatSignal {
+  id: string;
+  playerId: string;
+  serverId: string | null;
+  matchId: string | null;
+  checkId: CheatCheckId;
+  weight: number;
+  /** Numeric evidence. We never store only "was cheating". */
+  metrics: Record<string, number | string | boolean>;
+  /** Negative when lag/ping plausibly explains the signal. */
+  networkAdjustment: number;
+  createdAt: number;
+}
+
+/** 1 = log only, 2 = hidden admin alert, 3 = match kick, 4 = temporary ban. */
+export type ActionTier = 1 | 2 | 3 | 4;
+
+export interface CheatCase {
+  id: string;
+  playerId: string;
+  confidence: number;
+  tier: ActionTier;
+  actionTaken: string;
+  signalIds: string[];
+  evidenceKeys: string[];
+  summary: string;
+  /** Automatic bans are never permanent. Only an admin may escalate. */
+  permanent: boolean;
+  createdAt: number;
+}
+
+// ------------------------------------------------------------------- bots
+export type BotModelTier = 'nano' | 'micro' | 'small' | 'pro';
+
+export interface BotTierSpec {
+  tier: BotModelTier;
+  /** Concrete Workers AI model id. */
+  model: string;
+  /** Match average ELO at which this tier starts being used. */
+  minAvgElo: number;
+  /** Match max ELO at which this tier starts being used. */
+  minMaxElo: number;
+  /** 0..1 baseline competence. */
+  skill: number;
+  reactionMs: [number, number];
+  errorRate: number;
+}
+
+export interface BotProfile {
+  id: string;
+  matchId: string;
+  modelTier: BotModelTier;
+  model: string;
+  skill: number;
+  reactionMs: number;
+  errorRate: number;
+  eloAssumed: number;
+}
+
+// -------------------------------------------------------------- matches
+export type MatchPhase = 'lobby' | 'queue' | 'playing' | 'results' | 'closed';
+
+export interface Match {
+  id: string;
+  serverId: string | null;
+  modeId: string;
+  phase: MatchPhase;
+  slots: number;
+  humans: number;
+  bots: number;
+  avgElo: number;
+  maxElo: number;
+  winner: string | null;
+  startedAt: number | null;
+  endedAt: number | null;
+}
+
+// ------------------------------------------------------------- game modes
+export interface GameModeSpec {
+  id: string;
+  titleFa: string;
+  titleEn: string;
+  teamSize: number;
+  teamCount: number;
+  minPlayers: number;
+  maxPlayers: number;
+  /** Seconds a typical match lasts; used for queue timeouts. */
+  targetDurationS: number;
+  /** XP awarded per win / per kill / per objective. */
+  rewards: { win: number; loss: number; kill: number; objective: number };
+  /** Coins awarded per win. */
+  coins: { win: number; kill: number };
+  /** Which bot behaviours matter for this mode. */
+  botSkills: string[];
+  icon: string;
+  banner: string;
+}
+
+// ------------------------------------------------------------------- otp
+export type OtpStage = 'request' | 'verify';
+
+export interface OtpChallenge {
+  phoneE164: string;
+  codeHash: string;
+  attempts: number;
   createdAt: number;
   expiresAt: number;
+  channel: 'telegram' | 'sms' | 'dev';
 }
 
-// ---------------------------------------------------------------------------
-// Audit
-// ---------------------------------------------------------------------------
-
-export type AuditAction =
-  | 'admin.login'
-  | 'admin.login_failed'
-  | 'admin.logout'
-  | 'admin.create'
-  | 'admin.update'
-  | 'admin.revoke'
-  | 'admin.restore'
-  | 'admin.delete'
-  | 'admin.password'
-  | 'user.create'
-  | 'user.update'
-  | 'user.delete'
-  | 'user.toggle'
-  | 'user.reset_usage'
-  | 'user.reset_connections'
-  | 'user.rotate_uuid'
-  | 'user.rotate_token'
-  | 'config.build'
-  | 'config.auto_build'
-  | 'config.sub_fetch'
-  | 'settings.update'
-  | 'endpoints.probe'
-  | 'endpoints.update'
-  | 'backup.export';
-
-export interface AuditEvent {
-  id: string;
-  ts: number;
-  actor: string; // admin username
-  action: AuditAction;
-  target: string; // user / admin / settings
-  details: string;
-  ip: string;
+// -------------------------------------------------------------- receipts
+export interface ReceiptVerdict {
+  readable: boolean;
+  tampered: boolean;
+  amountVisible: boolean;
+  dateVisible: boolean;
+  trackingVisible: boolean;
+  duplicate: boolean;
+  /** 0..1 confidence that the receipt is genuine. */
+  confidence: number;
+  reasons: string[];
+  /** true => auto-approve allowed. false => must go to a human. */
+  autoApprove: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Config building
-// ---------------------------------------------------------------------------
-
-export type ConfigFormat = 'v2ray' | 'raw' | 'clash' | 'singbox';
-
-export interface BuildRequest {
-  paths: number; // clamped to [1, maxPathsForAdmin]
-  profileMode?: ProfileMode;
-  speedPreset?: SpeedPreset;
-  fingerprint?: Fingerprint;
-  configNameTemplate?: string;
-  endpointIds?: string[]; // optional subset of endpoints to use
+// ----------------------------------------------------------- monitoring
+export interface HealthSnapshot {
+  serverId: string;
+  status: ServerStatus;
+  processOk: boolean | null;
+  portOk: boolean | null;
+  pingMs: number | null;
+  players: number | null;
+  memMb: number | null;
+  cpuPct: number | null;
+  note: string | null;
+  createdAt: number;
 }
 
-export interface BuiltConfig {
-  format: ConfigFormat;
-  /** Number of routes actually produced (after power-level clamps). */
-  paths: number;
-  requestedPaths: number;
-  truncated: boolean;
-  payload: string;
-  user: {
-    id: string;
-    name: string;
-    uuid: string;
-    token: string;
-    subUrl: string;
-    profileMode: ProfileMode;
-    speedPreset: SpeedPreset;
-    fingerprint: Fingerprint;
-  };
-}
+// ------------------------------------------------------------------- env
+export interface Env {
+  GODDB: D1Database;
+  GODKV: KVNamespace;
+  GODR2: R2Bucket;
+  AI?: Ai;
+  ASSETS?: Fetcher;
+  SERVER_LOCK: DurableObjectNamespace;
+  MATCHMAKER: DurableObjectNamespace;
+  ANTICHEAT: DurableObjectNamespace;
 
-// ---------------------------------------------------------------------------
-// API envelope
-// ---------------------------------------------------------------------------
-
-export interface ApiErrorBody {
-  error: string;
-  message: string;
-  details?: string;
-}
-
-export interface OwnerInfo {
-  username: string;
-  role: 'owner';
-  power: 'ultra';
-}
-
-export interface MeInfo {
-  authenticated: boolean;
-  admin?: {
-    id: string;
-    username: string;
-    role: AdminRole;
-    power: PowerLevel;
-    permissions: Permission[];
-  };
+  ADMIN_PASSWORD: string;
+  SESSION_SECRET: string;
+  OTP_SECRET: string;
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_OWNER_CHAT_ID?: string;
+  SMS_PROVIDER_KEY?: string;
+  ZARINPAL_MERCHANT_ID?: string;
+  WORKER_HOST?: string;
 }

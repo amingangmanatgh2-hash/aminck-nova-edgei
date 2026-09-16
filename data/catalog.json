@@ -1,0 +1,686 @@
+{
+  "generated_by": "scripts/export-catalog.mjs",
+  "generated_at": "static",
+  "count": 33,
+  "products": [
+    {
+      "id": "p-rank-free",
+      "sku": "rank-free",
+      "kind": "rank",
+      "title_fa": "رنک رایگان",
+      "title_en": "Free Rank",
+      "description": "دسترسی به لابی و همهٔ گیم‌مودها. همه از اینجا شروع می‌کنند.",
+      "price_usd": 0,
+      "base_usd": 0,
+      "meta": {
+        "rank_id": "free",
+        "tier": 0,
+        "perks": [
+          "lobby-access"
+        ]
+      },
+      "visible_before_auth": true
+    },
+    {
+      "id": "p-rank-noob",
+      "sku": "rank-noob",
+      "kind": "rank",
+      "title_fa": "رنک نوب",
+      "title_en": "Noob Rank",
+      "description": "۲ خانه، چت رنگی، ساخت پارتی. با ۱۰۰۰ امتیاز هم رایگان به دست می‌آید.",
+      "price_usd": 99,
+      "base_usd": 99,
+      "meta": {
+        "rank_id": "noob",
+        "tier": 1,
+        "perks": [
+          "2-home",
+          "colored-chat"
+        ]
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-rank-normal",
+      "sku": "rank-normal",
+      "kind": "rank",
+      "title_fa": "رنک معمولی",
+      "title_en": "Normal Rank",
+      "description": "۳ خانه، رنگ نیک‌نیم، صف اولویت‌دار. با ۵۰۰۰ امتیاز رایگان.",
+      "price_usd": 249,
+      "base_usd": 249,
+      "meta": {
+        "rank_id": "normal",
+        "tier": 2,
+        "perks": [
+          "3-home",
+          "nick-color",
+          "queue-skip"
+        ]
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-rank-pro",
+      "sku": "rank-pro",
+      "kind": "rank",
+      "title_fa": "رنک پرو",
+      "title_en": "Pro Rank",
+      "description": "۵ خانه، افکت دنباله، ۵۰۰ جم ماهانه. با ۲۰۰۰۰ امتیاز رایگان.",
+      "price_usd": 499,
+      "base_usd": 499,
+      "meta": {
+        "rank_id": "pro",
+        "tier": 3,
+        "perks": [
+          "5-home",
+          "trail-effect",
+          "monthly-500-gems"
+        ]
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-rank-god",
+      "sku": "rank-god",
+      "kind": "rank",
+      "title_fa": "رنک گاد",
+      "title_en": "God Rank",
+      "description": "۱۰ خانه، افکت پرتال، پرواز در لابی، ۱۵۰۰ جم ماهانه. با ۶۰۰۰۰ امتیاز رایگان.",
+      "price_usd": 999,
+      "base_usd": 999,
+      "meta": {
+        "rank_id": "god",
+        "tier": 4,
+        "perks": [
+          "10-home",
+          "portal-effect",
+          "monthly-1500-gems",
+          "private-game"
+        ]
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-rank-ultragod",
+      "sku": "rank-ultragod",
+      "kind": "rank",
+      "title_fa": "رنک الترا گاد",
+      "title_en": "Ultra God Rank",
+      "description": "۲۰ خانه، پیام ورود اختصاصی، اسلات اختصاصی، ۴۰۰۰ جم ماهانه. با ۱۵۰۰۰۰ امتیاز رایگان.",
+      "price_usd": 1999,
+      "base_usd": 1999,
+      "meta": {
+        "rank_id": "ultragod",
+        "tier": 5,
+        "perks": [
+          "20-home",
+          "custom-join-message",
+          "monthly-4000-gems",
+          "dedicated-slot",
+          "season-badge"
+        ]
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-cape-ender",
+      "sku": "cos-cape-ender",
+      "kind": "cosmetic",
+      "title_fa": "کیپ اندر",
+      "title_en": "Ender Cape",
+      "description": "کیپ بنفش با ذرات اندر",
+      "price_usd": 149,
+      "base_usd": 149,
+      "meta": {
+        "slot": "cape",
+        "cosmetic_key": "cape-ender"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-cape-god",
+      "sku": "cos-cape-god",
+      "kind": "cosmetic",
+      "title_fa": "کیپ گاد",
+      "title_en": "God Cape",
+      "description": "کیپ طلایی متحرک، مخصوص رنک گاد به بالا",
+      "price_usd": 299,
+      "base_usd": 299,
+      "meta": {
+        "slot": "cape",
+        "cosmetic_key": "cape-god"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-cape-void",
+      "sku": "cos-cape-void",
+      "kind": "cosmetic",
+      "title_fa": "کیپ وید",
+      "title_en": "Void Cape",
+      "description": "کیپ سیاه با افکت کهکشان",
+      "price_usd": 199,
+      "base_usd": 199,
+      "meta": {
+        "slot": "cape",
+        "cosmetic_key": "cape-void"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-hat-crown",
+      "sku": "cos-hat-crown",
+      "kind": "cosmetic",
+      "title_fa": "تاج پادشاه",
+      "title_en": "King Crown",
+      "description": "تاج طلایی با ذرات درخشان",
+      "price_usd": 249,
+      "base_usd": 249,
+      "meta": {
+        "slot": "hat",
+        "cosmetic_key": "hat-crown"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-hat-halo",
+      "sku": "cos-hat-halo",
+      "kind": "cosmetic",
+      "title_fa": "هاله فرشته",
+      "title_en": "Angel Halo",
+      "description": "هاله نور بالای سر",
+      "price_usd": 179,
+      "base_usd": 179,
+      "meta": {
+        "slot": "hat",
+        "cosmetic_key": "hat-halo"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-hat-horns",
+      "sku": "cos-hat-horns",
+      "kind": "cosmetic",
+      "title_fa": "شاخ شیطان",
+      "title_en": "Demon Horns",
+      "description": "شاخ قرمز با افکت دود",
+      "price_usd": 179,
+      "base_usd": 179,
+      "meta": {
+        "slot": "hat",
+        "cosmetic_key": "hat-horns"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-hat-dragon",
+      "sku": "cos-hat-dragon",
+      "kind": "cosmetic",
+      "title_fa": "کلاه اژدها",
+      "title_en": "Dragon Helm",
+      "description": "کلاه اژدها با ذرات آتش",
+      "price_usd": 349,
+      "base_usd": 349,
+      "meta": {
+        "slot": "hat",
+        "cosmetic_key": "hat-dragon"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-trail-rainbow",
+      "sku": "cos-trail-rainbow",
+      "kind": "cosmetic",
+      "title_fa": "دنباله رنگین‌کمان",
+      "title_en": "Rainbow Trail",
+      "description": "دنباله رنگی هنگام حرکت",
+      "price_usd": 129,
+      "base_usd": 129,
+      "meta": {
+        "slot": "trail",
+        "cosmetic_key": "trail-rainbow"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-trail-flame",
+      "sku": "cos-trail-flame",
+      "kind": "cosmetic",
+      "title_fa": "دنباله آتش",
+      "title_en": "Flame Trail",
+      "description": "دنباله آتش هنگام حرکت",
+      "price_usd": 149,
+      "base_usd": 149,
+      "meta": {
+        "slot": "trail",
+        "cosmetic_key": "trail-flame"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-trail-snow",
+      "sku": "cos-trail-snow",
+      "kind": "cosmetic",
+      "title_fa": "دنباله برف",
+      "title_en": "Snow Trail",
+      "description": "دنباله برف و یخ",
+      "price_usd": 119,
+      "base_usd": 119,
+      "meta": {
+        "slot": "trail",
+        "cosmetic_key": "trail-snow"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-portal-vortex",
+      "sku": "cos-portal-vortex",
+      "kind": "cosmetic",
+      "title_fa": "افکت پرتال گردباد",
+      "title_en": "Vortex Portal",
+      "description": "افکت پرتال چرخشی بنفش",
+      "price_usd": 199,
+      "base_usd": 199,
+      "meta": {
+        "slot": "portal",
+        "cosmetic_key": "portal-vortex"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-portal-lightning",
+      "sku": "cos-portal-lightning",
+      "kind": "cosmetic",
+      "title_fa": "افکت پرتال صاعقه",
+      "title_en": "Lightning Portal",
+      "description": "افکت پرتال با جرقه برق",
+      "price_usd": 229,
+      "base_usd": 229,
+      "meta": {
+        "slot": "portal",
+        "cosmetic_key": "portal-lightning"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-nick-rainbow",
+      "sku": "cos-nick-rainbow",
+      "kind": "cosmetic",
+      "title_fa": "نیک‌نیم رنگین‌کمانی",
+      "title_en": "Rainbow Nickname",
+      "description": "نام کاربری با رنگ متحرک",
+      "price_usd": 99,
+      "base_usd": 99,
+      "meta": {
+        "slot": "nickcolour",
+        "cosmetic_key": "nick-rainbow"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-nick-gold",
+      "sku": "cos-nick-gold",
+      "kind": "cosmetic",
+      "title_fa": "نیک‌نیم طلایی",
+      "title_en": "Golden Nickname",
+      "description": "نام کاربری طلایی",
+      "price_usd": 79,
+      "base_usd": 79,
+      "meta": {
+        "slot": "nickcolour",
+        "cosmetic_key": "nick-gold"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-tag-vip",
+      "sku": "cos-tag-vip",
+      "kind": "cosmetic",
+      "title_fa": "تگ چت VIP",
+      "title_en": "VIP Chat Tag",
+      "description": "تگ [VIP] کنار نام در چت",
+      "price_usd": 89,
+      "base_usd": 89,
+      "meta": {
+        "slot": "chattag",
+        "cosmetic_key": "tag-vip"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-tag-mvp",
+      "sku": "cos-tag-mvp",
+      "kind": "cosmetic",
+      "title_fa": "تگ چت MVP",
+      "title_en": "MVP Chat Tag",
+      "description": "تگ [MVP] متحرک کنار نام",
+      "price_usd": 129,
+      "base_usd": 129,
+      "meta": {
+        "slot": "chattag",
+        "cosmetic_key": "tag-mvp"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-pet-wolf",
+      "sku": "cos-pet-wolf",
+      "kind": "cosmetic",
+      "title_fa": "پت گرگ",
+      "title_en": "Wolf Pet",
+      "description": "گرگ همراه با قلاده رنگی",
+      "price_usd": 259,
+      "base_usd": 259,
+      "meta": {
+        "slot": "pet",
+        "cosmetic_key": "pet-wolf"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-pet-dragon",
+      "sku": "cos-pet-dragon",
+      "kind": "cosmetic",
+      "title_fa": "پت بچه‌اژدها",
+      "title_en": "Baby Dragon Pet",
+      "description": "بچه‌اژدهای پرنده دنبال شما",
+      "price_usd": 449,
+      "base_usd": 449,
+      "meta": {
+        "slot": "pet",
+        "cosmetic_key": "pet-dragon"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-fx-lightning",
+      "sku": "cos-fx-lightning",
+      "kind": "cosmetic",
+      "title_fa": "افکت کیل صاعقه",
+      "title_en": "Lightning Kill FX",
+      "description": "صاعقه روی قربانی هنگام کیل",
+      "price_usd": 139,
+      "base_usd": 139,
+      "meta": {
+        "slot": "killfx",
+        "cosmetic_key": "fx-lightning"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-cos-fx-explosion",
+      "sku": "cos-fx-explosion",
+      "kind": "cosmetic",
+      "title_fa": "افکت کیل انفجار",
+      "title_en": "Explosion Kill FX",
+      "description": "انفجار ذرات هنگام کیل",
+      "price_usd": 159,
+      "base_usd": 159,
+      "meta": {
+        "slot": "killfx",
+        "cosmetic_key": "fx-explosion"
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-bundle-starter",
+      "sku": "bundle-starter",
+      "kind": "bundle",
+      "title_fa": "باندل استارتر",
+      "title_en": "Starter Bundle",
+      "description": "رنک معمولی + کیپ اندر + دنباله رنگین‌کمان + ۵۰۰ جم",
+      "price_usd": 399,
+      "base_usd": 399,
+      "meta": {
+        "includes": [
+          "rank-normal",
+          "cos-cape-ender",
+          "cos-trail-rainbow"
+        ],
+        "gems": 500
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-bundle-warrior",
+      "sku": "bundle-warrior",
+      "kind": "bundle",
+      "title_fa": "باندل جنگجو",
+      "title_en": "Warrior Bundle",
+      "description": "رنک پرو + تاج پادشاه + افکت کیل صاعقه + ۱۵۰۰ جم",
+      "price_usd": 749,
+      "base_usd": 749,
+      "meta": {
+        "includes": [
+          "rank-pro",
+          "cos-hat-crown",
+          "cos-fx-lightning"
+        ],
+        "gems": 1500
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-bundle-legend",
+      "sku": "bundle-legend",
+      "kind": "bundle",
+      "title_fa": "باندل افسانه",
+      "title_en": "Legend Bundle",
+      "description": "رنک گاد + کلاه اژدها + پت بچه‌اژدها + افکت پرتال گردباد + ۴۰۰۰ جم",
+      "price_usd": 1499,
+      "base_usd": 1499,
+      "meta": {
+        "includes": [
+          "rank-god",
+          "cos-hat-dragon",
+          "cos-pet-dragon",
+          "cos-portal-vortex"
+        ],
+        "gems": 4000
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-boost-xp-2x-7d",
+      "sku": "boost-xp-2x-7d",
+      "kind": "booster",
+      "title_fa": "بوستر ۲ برابر امتیاز (۷ روز)",
+      "title_en": "2x XP Booster (7 days)",
+      "description": "تمام امتیازهای بازی دو برابر می‌شود",
+      "price_usd": 199,
+      "base_usd": 199,
+      "meta": {
+        "multiplier": 2,
+        "days": 7
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-boost-coins-2x-7d",
+      "sku": "boost-coins-2x-7d",
+      "kind": "booster",
+      "title_fa": "بوستر ۲ برابر سکه (۷ روز)",
+      "title_en": "2x Coins Booster (7 days)",
+      "description": "تمام سکه‌های دریافتی دو برابر می‌شود",
+      "price_usd": 199,
+      "base_usd": 199,
+      "meta": {
+        "multiplier": 2,
+        "days": 7
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-gems-1000",
+      "sku": "gems-1000",
+      "kind": "booster",
+      "title_fa": "۱۰۰۰ جم",
+      "title_en": "1000 Gems",
+      "description": "جم برای خریدهای داخل بازی",
+      "price_usd": 99,
+      "base_usd": 99,
+      "meta": {
+        "gems": 1000
+      },
+      "visible_before_auth": false
+    },
+    {
+      "id": "p-gems-5000",
+      "sku": "gems-5000",
+      "kind": "booster",
+      "title_fa": "۵۰۰۰ جم",
+      "title_en": "5000 Gems",
+      "description": "جم برای خریدهای داخل بازی",
+      "price_usd": 399,
+      "base_usd": 399,
+      "meta": {
+        "gems": 5000
+      },
+      "visible_before_auth": false
+    }
+  ],
+  "ranks": {
+    "free": {
+      "id": "free",
+      "labelFa": "رایگان",
+      "labelEn": "Free",
+      "tier": 0,
+      "tag": "",
+      "colour": "#9aa7b4",
+      "priceUsd": null,
+      "xpThreshold": 0,
+      "maxPaths": 2,
+      "permissions": [
+        "play",
+        "chat"
+      ],
+      "perks": [
+        "lobby-access"
+      ]
+    },
+    "noob": {
+      "id": "noob",
+      "labelFa": "نوب",
+      "labelEn": "Noob",
+      "tier": 1,
+      "tag": "[نوب]",
+      "colour": "#8bc34a",
+      "priceUsd": 99,
+      "xpThreshold": 1000,
+      "maxPaths": 4,
+      "permissions": [
+        "play",
+        "chat",
+        "cosmetic:basic",
+        "party:create"
+      ],
+      "perks": [
+        "2-home",
+        "colored-chat"
+      ]
+    },
+    "normal": {
+      "id": "normal",
+      "labelFa": "معمولی",
+      "labelEn": "Normal",
+      "tier": 2,
+      "tag": "[معمولی]",
+      "colour": "#03a9f4",
+      "priceUsd": 249,
+      "xpThreshold": 5000,
+      "maxPaths": 8,
+      "permissions": [
+        "play",
+        "chat",
+        "cosmetic:basic",
+        "cosmetic:cape",
+        "party:create",
+        "queue:priority"
+      ],
+      "perks": [
+        "3-home",
+        "nick-color",
+        "queue-skip"
+      ]
+    },
+    "pro": {
+      "id": "pro",
+      "labelFa": "پرو",
+      "labelEn": "Pro",
+      "tier": 3,
+      "tag": "[پرو]",
+      "colour": "#9c27b0",
+      "priceUsd": 499,
+      "xpThreshold": 20000,
+      "maxPaths": 16,
+      "permissions": [
+        "play",
+        "chat",
+        "cosmetic:*",
+        "party:create",
+        "queue:priority",
+        "pet"
+      ],
+      "perks": [
+        "5-home",
+        "trail-effect",
+        "monthly-500-gems"
+      ]
+    },
+    "god": {
+      "id": "god",
+      "labelFa": "گاد",
+      "labelEn": "God",
+      "tier": 4,
+      "tag": "[گاد]",
+      "colour": "#ffc107",
+      "priceUsd": 999,
+      "xpThreshold": 60000,
+      "maxPaths": 32,
+      "permissions": [
+        "play",
+        "chat",
+        "cosmetic:*",
+        "party:create",
+        "queue:priority",
+        "pet",
+        "fly:lobby"
+      ],
+      "perks": [
+        "10-home",
+        "portal-effect",
+        "monthly-1500-gems",
+        "private-game"
+      ]
+    },
+    "ultragod": {
+      "id": "ultragod",
+      "labelFa": "الترا گاد",
+      "labelEn": "Ultra God",
+      "tier": 5,
+      "tag": "[الترا گاد]",
+      "colour": "#ff5252",
+      "priceUsd": 1999,
+      "xpThreshold": 150000,
+      "maxPaths": 64,
+      "permissions": [
+        "play",
+        "chat",
+        "cosmetic:*",
+        "party:create",
+        "queue:priority",
+        "pet",
+        "fly:lobby",
+        "beta-features"
+      ],
+      "perks": [
+        "20-home",
+        "custom-join-message",
+        "monthly-4000-gems",
+        "dedicated-slot",
+        "season-badge"
+      ]
+    }
+  }
+}
