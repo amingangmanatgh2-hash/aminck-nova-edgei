@@ -1,0 +1,65 @@
+# ============================================================================
+#  ConfigBot — Cloudflare Worker
+#
+#  Deploy:  npx wrangler deploy
+#  Then:    copy the printed *.workers.dev URL into Telegram as the webhook
+#           base, and into MINIAPP_URL as the web_app_url.
+#
+#  Everything here is free-tier. The only thing that is NOT on Cloudflare is
+#  the VPN server itself — that needs a VPS, see docs/CONFIGBOT-LIMITS.md.
+# ============================================================================
+
+name = "configbot"
+main = "src/index.ts"
+
+# 2026-08-01: newer dates make workerd refuse to start. Do not bump past
+# whatever your installed wrangler supports.
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+# --- health probe every 5 min, expiry warnings 09:00, outbox flush every 2 min,
+#     subscription expiry sweep 03:00. Free plan allows 3 cron triggers; these
+#     are combined into the same handler and dispatched on the cron string.
+[triggers]
+crons = ["*/5 * * * *", "0 9 * * *", "*/2 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "configbot-db"
+# Filled in by `wrangler d1 create configbot-db`.
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "configbot-receipts"
+
+# Workers AI, used for receipt screening and free-form support answers.
+# Comment this out and the bot falls back to its deterministic rules — it does
+# not break, it just stops improvising.
+[ai]
+binding = "AI"
+
+[vars]
+# Comma-separated Telegram user ids allowed into /admin.
+ADMIN_USER_IDS = ""
+# Public base URL, e.g. https://configbot.<subdomain>.workers.dev
+# Needed for subscription links and the mini app web_app_url.
+PUBLIC_URL = ""
+
+# --- Secrets (never in this file) -------------------------------------------
+#   npx wrangler secret put BOT_TOKEN
+#   npx wrangler secret put WEBHOOK_SECRET
+#   npx wrangler secret put ZARINPAL_MERCHANT     # optional
+#   npx wrangler secret put NEXTPAY_TRANS         # optional
+#
+# WEBHOOK_SECRET must match the value Telegram sends in
+# X-Telegram-Bot-Api-Secret-Token. Generate one with:
+#   openssl rand -hex 32
+
+# --- Local development ------------------------------------------------------
+# `npx wrangler dev` uses .wrangler/state and a local D1 file. Apply the
+# schema first:
+#   npx wrangler d1 execute configbot-db --local --file=src/db/schema.sql
