@@ -31,11 +31,16 @@
 **همه‌چیز را از همین پوشه می‌خواند** و روی گوشی اجرا می‌شود:
 
 ```bash
-python3 main.py              # http://127.0.0.1:8000/
-python3 main.py --status     # چه چیزی الان در دسترس است
-python3 main.py --ask "کجام؟"
-python3 main.py --selftest   # ۱۸۲ تست، بدون هیچ بسته‌ی اضافی
+python3 setup.py             # بررسی محیط + نصب termux-api + اجرای تست‌ها
+python3 run.py               # → http://127.0.0.1:8000/
+python3 run.py --open        # اجرا + باز کردن مرورگر
+python3 run.py --status      # چه چیزی الان در دسترس است
+python3 run.py --ask "کجام؟"
+python3 run.py --selftest    # ۱۸۲ تست، بدون هیچ بسته‌ی اضافی
 ```
+
+هر دو فقط با کتابخانه‌ی استاندارد پایتون کار می‌کنند (`setup.py` تنها چیزی که
+ممکن است نصب کند `termux-api` است، با `pkg`).
 
 سه کار اصلی:
 

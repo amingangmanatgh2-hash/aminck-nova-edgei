@@ -4,8 +4,21 @@
 داری یک گوشی با ترموکس است. همه‌چیز از **همین پوشه** خوانده می‌شود.
 
 ```
-python3 main.py
-# → http://127.0.0.1:8000/
+python3 setup.py     # بررسی محیط + نصب termux-api + تست‌ها
+python3 run.py       # → http://127.0.0.1:8000/
+```
+
+`run.py` هر آرگومانی جز `--open` را به `main.py` می‌دهد، پس `python3 main.py`
+هم مستقیم کار می‌کند.
+
+```
+python3 run.py --open           اجرا + باز کردن مرورگر
+python3 run.py --port 8080
+python3 run.py --host 0.0.0.0   از گوشی دیگر در همان وای‌فای
+python3 run.py --ask "کجام؟"
+python3 run.py --repl
+python3 run.py --status
+python3 run.py --selftest
 ```
 
 وابستگی خارجی ندارد: فقط کتابخانه‌ی استاندارد پایتون ۳.۹+. بدون npm، بدون pip،
@@ -159,7 +172,9 @@ Termux:API (اپ)  →  pkg install termux-api  →  اجازه‌ی Location
 ## ۵. اجرای تست‌ها روی گوشی
 
 ```
-python3 main.py --selftest
+python3 setup.py
+# یا
+python3 run.py --selftest
 # یا
 python3 -m unittest discover -s tests -t .
 ```
