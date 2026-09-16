@@ -44,3 +44,6 @@ data/config.json
 
 # Release archives
 *.zip
+
+# local preview harness (esbuild output + SQLite state)
+.preview/
